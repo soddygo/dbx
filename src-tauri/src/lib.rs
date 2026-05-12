@@ -143,6 +143,10 @@ pub fn run() {
             commands::transfer::cancel_transfer,
             commands::database_export::export_database_sql,
             commands::database_export::cancel_database_export,
+            commands::agents::list_installed_agents,
+            commands::agents::install_agent,
+            commands::agents::uninstall_agent,
+            commands::agents::check_jre_installed,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

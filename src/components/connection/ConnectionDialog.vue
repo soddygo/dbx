@@ -146,7 +146,7 @@ const driverProfiles: Record<
   mariadb: { type: "mysql", port: 3306, user: "root", label: "MariaDB", icon: "mariadb" },
   tidb: { type: "mysql", port: 4000, user: "root", label: "TiDB", icon: "tidb" },
   oceanbase: { type: "mysql", port: 2881, user: "root", label: "OceanBase", icon: "oceanbase" },
-  goldendb: { type: "mysql", port: 3306, user: "root", label: "GoldenDB", icon: "goldendb" },
+  goldendb: { type: "goldendb", port: 3306, user: "root", label: "GoldenDB", icon: "goldendb" },
   opengauss: {
     type: "gaussdb",
     port: 5432,
@@ -155,8 +155,8 @@ const driverProfiles: Record<
     icon: "opengauss",
   },
   gaussdb: { type: "gaussdb", port: 5432, user: "gaussdb", label: "GaussDB", icon: "gaussdb" },
-  kingbase: { type: "postgres", port: 54321, user: "system", label: "KingBase", icon: "kingbase" },
-  vastbase: { type: "postgres", port: 5432, user: "vastbase", label: "Vastbase", icon: "vastbase" },
+  kingbase: { type: "kingbase", port: 54321, user: "system", label: "KingBase", icon: "kingbase" },
+  vastbase: { type: "vastbase", port: 5432, user: "vastbase", label: "Vastbase", icon: "vastbase" },
   doris: { type: "mysql", port: 9030, user: "root", label: "Doris", icon: "doris", urlParams: "" },
   selectdb: {
     type: "mysql",
@@ -322,7 +322,8 @@ function defaultDatabaseForProfile() {
   if (form.value.db_type === "redshift") return "dev";
   if (form.value.db_type === "gaussdb") return "postgres";
   if (selectedType.value === "cockroachdb") return "defaultdb";
-  if (form.value.db_type === "postgres") return "postgres";
+  if (form.value.db_type === "postgres" || form.value.db_type === "kingbase" || form.value.db_type === "vastbase")
+    return "postgres";
   if (form.value.db_type === "sqlserver") return "master";
   if (form.value.db_type === "oracle") return "ORCL";
   return "";
@@ -1116,7 +1117,14 @@ function openExternalUrl(url: string) {
                   </div>
 
                   <div
-                    v-if="form.db_type === 'mysql' || form.db_type === 'postgres' || form.db_type === 'redshift'"
+                    v-if="
+                      form.db_type === 'mysql' ||
+                      form.db_type === 'postgres' ||
+                      form.db_type === 'redshift' ||
+                      form.db_type === 'kingbase' ||
+                      form.db_type === 'vastbase' ||
+                      form.db_type === 'goldendb'
+                    "
                     class="grid grid-cols-4 items-center gap-4"
                   >
                     <Label class="text-right">{{ t("connection.urlParams") }}</Label>

@@ -113,6 +113,9 @@ pub enum DatabaseType {
     StarRocks,
     Redshift,
     Dameng,
+    Kingbase,
+    Vastbase,
+    Goldendb,
     Gaussdb,
     Jdbc,
 }
@@ -142,6 +145,7 @@ impl ConnectionConfig {
             },
             DatabaseType::Redshift => Some("dev"),
             DatabaseType::Gaussdb => Some("postgres"),
+            DatabaseType::Kingbase | DatabaseType::Vastbase => Some("postgres"),
             _ => None,
         }
     }
@@ -208,6 +212,9 @@ impl ConnectionConfig {
             DatabaseType::Oracle => format!("oracle://{host}:{port}{db_part}"),
             DatabaseType::Elasticsearch => format!("http://{host}:{port}"),
             DatabaseType::Dameng => format!("dm://{host}:{port}{db_part}"),
+            DatabaseType::Kingbase => format!("kingbase://{host}:{port}{db_part}"),
+            DatabaseType::Vastbase => format!("vastbase://{host}:{port}{db_part}"),
+            DatabaseType::Goldendb => format!("goldendb://{host}:{port}{db_part}"),
             DatabaseType::Gaussdb => format!("gaussdb://{host}:{port}{db_part}"),
             DatabaseType::Jdbc => "jdbc:<redacted>".to_string(),
         }
@@ -276,6 +283,15 @@ impl ConnectionConfig {
             DatabaseType::Elasticsearch => format!("http://{host}:{port}"),
             DatabaseType::Dameng => {
                 format!("dm://{}:{}@{host}:{port}{db_part}", username, password)
+            }
+            DatabaseType::Kingbase => {
+                format!("kingbase://{}:{}@{host}:{port}{db_part}", username, password)
+            }
+            DatabaseType::Vastbase => {
+                format!("vastbase://{}:{}@{host}:{port}{db_part}", username, password)
+            }
+            DatabaseType::Goldendb => {
+                format!("goldendb://{}:{}@{host}:{port}{db_part}", username, password)
             }
             DatabaseType::Gaussdb => {
                 format!("gaussdb://{}:{}@{host}:{port}{db_part}", username, password)

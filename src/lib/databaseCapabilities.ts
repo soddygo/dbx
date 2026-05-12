@@ -7,6 +7,8 @@ export const SCHEMA_AWARE_TYPES = new Set<DatabaseType>([
   "redshift",
   "dameng",
   "gaussdb",
+  "kingbase",
+  "vastbase",
   "jdbc",
 ]);
 
@@ -21,6 +23,9 @@ export const DIAGRAM_SUPPORTED_TYPES = new Set<DatabaseType>([
   "redshift",
   "dameng",
   "gaussdb",
+  "kingbase",
+  "vastbase",
+  "goldendb",
 ]);
 
 export const DATABASE_SEARCH_SUPPORTED_TYPES = new Set<DatabaseType>([
@@ -34,6 +39,9 @@ export const DATABASE_SEARCH_SUPPORTED_TYPES = new Set<DatabaseType>([
   "clickhouse",
   "dameng",
   "gaussdb",
+  "kingbase",
+  "vastbase",
+  "goldendb",
 ]);
 
 export const TABLE_IMPORT_SUPPORTED_TYPES = new Set<DatabaseType>([
@@ -49,6 +57,9 @@ export const TABLE_IMPORT_SUPPORTED_TYPES = new Set<DatabaseType>([
   "redshift",
   "dameng",
   "gaussdb",
+  "kingbase",
+  "vastbase",
+  "goldendb",
 ]);
 
 export const TABLE_STRUCTURE_SUPPORTED_TYPES = new Set<DatabaseType>(["mysql", "postgres", "sqlite", "sqlserver"]);
@@ -84,6 +95,8 @@ export const FETCH_FIRST_TYPES = new Set<DatabaseType>(["oracle", "dameng"]);
 export const TREE_SCHEMA_TYPES = new Set<DatabaseType>(["postgres", "redshift", "sqlserver", "gaussdb", "jdbc"]);
 
 export const PG_LIKE_STRUCTURE_TYPES = new Set<DatabaseType>(["postgres", "redshift", "gaussdb"]);
+
+export const AGENT_DRIVER_TYPES = new Set<DatabaseType>(["dameng", "kingbase", "vastbase", "goldendb"]);
 
 export const TRANSFER_SQL_TYPES = new Set<DatabaseType>([
   "mysql",

@@ -25,6 +25,7 @@ import { isTauriRuntime } from "@/lib/tauriRuntime";
 import type { JdbcDriverInfo, JdbcPluginStatus } from "@/types/database";
 import * as api from "@/lib/api";
 import { aiTestConnection } from "@/lib/api";
+import DriverManager from "@/components/config/DriverManager.vue";
 import { useToast } from "@/composables/useToast";
 
 const { t } = useI18n();
@@ -489,6 +490,7 @@ watch(
           <TabsTrigger value="appearance" class="flex-1">{{ t("settings.appearanceTab") }}</TabsTrigger>
           <TabsTrigger value="ai" class="flex-1">{{ t("settings.aiTab") }}</TabsTrigger>
           <TabsTrigger v-if="!isWeb" value="jdbc" class="flex-1">{{ t("settings.jdbcTab") }}</TabsTrigger>
+          <TabsTrigger v-if="!isWeb" value="drivers" class="flex-1">驱动管理</TabsTrigger>
           <TabsTrigger v-if="isWeb" value="security" class="flex-1">{{ t("settings.securityTab") }}</TabsTrigger>
           <TabsTrigger value="about" class="flex-1">{{ t("settings.aboutTab") }}</TabsTrigger>
         </TabsList>
@@ -926,6 +928,10 @@ watch(
               {{ t("auth.changePassword") }}
             </Button>
           </DialogFooter>
+        </TabsContent>
+
+        <TabsContent v-if="!isWeb" value="drivers" class="py-2">
+          <DriverManager />
         </TabsContent>
 
         <TabsContent value="about" class="space-y-5 py-2">

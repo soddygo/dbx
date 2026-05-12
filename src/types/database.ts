@@ -14,6 +14,9 @@ export type DatabaseType =
   | "redshift"
   | "dameng"
   | "gaussdb"
+  | "kingbase"
+  | "vastbase"
+  | "goldendb"
   | "jdbc";
 
 export interface ConnectionConfig {

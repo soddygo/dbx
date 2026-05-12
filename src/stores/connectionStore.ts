@@ -159,6 +159,9 @@ export const useConnectionStore = defineStore("connection", () => {
       redshift: "Redshift",
       dameng: "DM (Dameng)",
       gaussdb: "GaussDB",
+      kingbase: "KingBase",
+      vastbase: "Vastbase",
+      goldendb: "GoldenDB",
     };
 
     const profile = config.driver_profile || config.db_type;
@@ -167,6 +170,12 @@ export const useConnectionStore = defineStore("connection", () => {
       dbType = "gaussdb" as ConnectionConfig["db_type"];
     } else if (profile === "redshift" && dbType === "postgres") {
       dbType = "redshift" as ConnectionConfig["db_type"];
+    } else if (profile === "kingbase" && dbType === "postgres") {
+      dbType = "kingbase" as ConnectionConfig["db_type"];
+    } else if (profile === "vastbase" && dbType === "postgres") {
+      dbType = "vastbase" as ConnectionConfig["db_type"];
+    } else if (profile === "goldendb" && dbType === "mysql") {
+      dbType = "goldendb" as ConnectionConfig["db_type"];
     }
 
     return {

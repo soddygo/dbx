@@ -233,21 +233,18 @@ pub async fn do_execute(
         }
         PoolKind::Redis(_) => Err("Use Redis-specific commands".to_string()),
         PoolKind::MongoDb(_) => Err("Use MongoDB-specific commands".to_string()),
-        PoolKind::Dameng(client) => {
+        PoolKind::Agent(client) => {
             let client = client.clone();
             let sql = sql.to_string();
             let schema = schema.map(|s| s.to_string());
             drop(connections);
             wait_for_query(cancel_token, async move {
-                let task = tokio::task::spawn_blocking(move || {
-                    let client = client.lock().map_err(|e| e.to_string())?;
-                    if let Some(schema) = schema {
-                        db::dm_driver::execute_query_with_schema_sync(&client, &schema, &sql)
-                    } else {
-                        db::dm_driver::execute_query_sync(&client, &sql)
-                    }
-                });
-                task.await.map_err(|e| e.to_string())?
+                let mut client = client.lock().await;
+                let params = match schema {
+                    Some(s) => serde_json::json!({"sql": sql, "schema": s}),
+                    None => serde_json::json!({"sql": sql}),
+                };
+                client.call("execute_query", params).await
             })
             .await
             .map(truncate_result)
@@ -501,7 +498,7 @@ pub async fn execute_statements(
 /// Execute multiple SQL statements within a single transaction.
 /// For sqlx-based pools (Postgres/MySQL/SQLite), uses the Transaction API to
 /// guarantee all statements run on the same physical connection.
-/// For custom drivers (ClickHouse/SqlServer/Dameng/Gaussdb), uses explicit
+/// For custom drivers (ClickHouse/SqlServer/Agent/Gaussdb), uses explicit
 /// BEGIN/COMMIT/ROLLBACK on the already-single-connection client.
 /// For databases that don't support explicit transactions (Redis, MongoDB, Oracle),
 /// executes statements sequentially without transaction.
@@ -528,7 +525,7 @@ pub async fn execute_statements_in_transaction(
             PoolKind::Postgres(pg) => TxPath::Pg(pg.clone()),
             PoolKind::Mysql(mp, _mode) => TxPath::Mysql(mp.clone(), false),
             PoolKind::Sqlite(sq) => TxPath::Sqlite(sq.clone()),
-            PoolKind::ClickHouse(_) | PoolKind::SqlServer(_) | PoolKind::Dameng(_) | PoolKind::Gaussdb(_) => {
+            PoolKind::ClickHouse(_) | PoolKind::SqlServer(_) | PoolKind::Agent(_) | PoolKind::Gaussdb(_) => {
                 TxPath::Explicit
             }
             PoolKind::DuckDb(_)

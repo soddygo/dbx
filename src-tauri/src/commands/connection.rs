@@ -112,15 +112,22 @@ pub async fn test_connection(state: State<'_, Arc<AppState>>, config: Connection
                     db::elasticsearch_driver::EsClient::new(&url, Some(&config.username), Some(&config.password));
                 db::elasticsearch_driver::test_connection(&client).await.map(|_| "Connection successful".to_string())
             }
-            DatabaseType::Dameng => db::dm_driver::connect(
-                &host,
-                port,
-                config.database.as_deref().unwrap_or(""),
-                &config.username,
-                &config.password,
-            )
-            .await
-            .map(|_| "Connection successful".to_string()),
+            DatabaseType::Dameng | DatabaseType::Kingbase | DatabaseType::Vastbase | DatabaseType::Goldendb => {
+                let mut client = state.agent_manager.spawn(&config.db_type).await?;
+                client
+                    .call::<serde_json::Value>(
+                        "test_connection",
+                        serde_json::json!({
+                            "host": host,
+                            "port": port,
+                            "database": config.database.as_deref().unwrap_or(""),
+                            "username": config.username,
+                            "password": config.password,
+                        }),
+                    )
+                    .await?;
+                Ok("Connection successful".to_string())
+            }
             DatabaseType::Gaussdb => db::gaussdb_driver::connect(
                 &host,
                 port,
@@ -220,16 +227,21 @@ pub async fn connect_db(state: State<'_, Arc<AppState>>, config: ConnectionConfi
             db::elasticsearch_driver::test_connection(&client).await?;
             PoolKind::Elasticsearch(client)
         }
-        DatabaseType::Dameng => {
-            let client = db::dm_driver::connect(
-                &host,
-                port,
-                db_config.database.as_deref().unwrap_or(""),
-                &db_config.username,
-                &db_config.password,
-            )
-            .await?;
-            PoolKind::Dameng(std::sync::Arc::new(std::sync::Mutex::new(client)))
+        DatabaseType::Dameng | DatabaseType::Kingbase | DatabaseType::Vastbase | DatabaseType::Goldendb => {
+            let mut client = state.agent_manager.spawn(&db_config.db_type).await?;
+            client
+                .call::<serde_json::Value>(
+                    "connect",
+                    serde_json::json!({
+                        "host": host,
+                        "port": port,
+                        "database": db_config.effective_database().unwrap_or(""),
+                        "username": db_config.username,
+                        "password": db_config.password,
+                    }),
+                )
+                .await?;
+            PoolKind::Agent(std::sync::Arc::new(tokio::sync::Mutex::new(client)))
         }
         DatabaseType::Gaussdb => {
             let client = db::gaussdb_driver::connect(
@@ -269,7 +281,7 @@ pub async fn disconnect_db(state: State<'_, Arc<AppState>>, connection_id: Strin
                 PoolKind::SqlServer(_) => {}
                 PoolKind::Oracle(_) => {}
                 PoolKind::Elasticsearch(_) => {}
-                PoolKind::Dameng(_) => {}
+                PoolKind::Agent(_) => {}
                 PoolKind::Gaussdb(_) => {}
                 PoolKind::ExternalTabular(_) => {}
                 PoolKind::ExternalDriver { .. } => {}

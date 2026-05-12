@@ -45,7 +45,7 @@ pub enum PoolKind {
     SqlServer(Arc<tokio::sync::Mutex<db::sqlserver::SqlServerClient>>),
     Oracle(Arc<OraclePool>),
     Elasticsearch(db::elasticsearch_driver::EsClient),
-    Dameng(Arc<std::sync::Mutex<db::dm_driver::DmClient>>),
+    Agent(Arc<tokio::sync::Mutex<db::agent_driver::AgentDriverClient>>),
     Gaussdb(Arc<tokio::sync::Mutex<db::gaussdb_driver::GaussdbClient>>),
     ExternalTabular(Arc<external::ExternalPool>),
     ExternalDriver { driver_id: String, config: ConnectionConfig, session: Arc<PluginDriverSession> },
@@ -99,6 +99,7 @@ pub struct AppState {
     pub proxy_tunnels: ProxyTunnelManager,
     pub storage: Storage,
     pub plugins: PluginRegistry,
+    pub agent_manager: crate::agent_manager::AgentManager,
 }
 
 pub fn metadata_connection_config(config: &ConnectionConfig) -> ConnectionConfig {
@@ -112,7 +113,7 @@ pub fn metadata_connection_config(config: &ConnectionConfig) -> ConnectionConfig
 pub fn database_connection_config(config: &ConnectionConfig, database: Option<&str>) -> ConnectionConfig {
     let mut db_config = if database.is_some() { config.clone() } else { metadata_connection_config(config) };
     if let Some(db) = database {
-        if db_config.db_type != DatabaseType::Oracle && db_config.db_type != DatabaseType::Dameng {
+        if !matches!(db_config.db_type, DatabaseType::Oracle | DatabaseType::Dameng) {
             db_config.database = Some(db.to_string());
         }
     }
@@ -133,6 +134,7 @@ impl AppState {
             proxy_tunnels: ProxyTunnelManager::new(),
             storage,
             plugins: PluginRegistry::new(plugin_dir),
+            agent_manager: crate::agent_manager::AgentManager::new(),
         }
     }
 
@@ -169,6 +171,9 @@ impl AppState {
                 | Some(DatabaseType::DuckDb)
                 | Some(DatabaseType::Oracle)
                 | Some(DatabaseType::Dameng)
+                | Some(DatabaseType::Kingbase)
+                | Some(DatabaseType::Vastbase)
+                | Some(DatabaseType::Goldendb)
                 | Some(DatabaseType::Jdbc)
         );
         let pool_key = if is_single_conn {
@@ -272,16 +277,21 @@ impl AppState {
                 db::elasticsearch_driver::test_connection(&client).await?;
                 PoolKind::Elasticsearch(client)
             }
-            DatabaseType::Dameng => {
-                let client = db::dm_driver::connect(
-                    &host,
-                    port,
-                    db_config.database.as_deref().unwrap_or(""),
-                    &db_config.username,
-                    &db_config.password,
-                )
-                .await?;
-                PoolKind::Dameng(Arc::new(std::sync::Mutex::new(client)))
+            DatabaseType::Dameng | DatabaseType::Kingbase | DatabaseType::Vastbase | DatabaseType::Goldendb => {
+                let mut client = self.agent_manager.spawn(&db_config.db_type).await?;
+                client
+                    .call::<serde_json::Value>(
+                        "connect",
+                        serde_json::json!({
+                            "host": host,
+                            "port": port,
+                            "database": db_config.effective_database().unwrap_or(""),
+                            "username": db_config.username,
+                            "password": db_config.password,
+                        }),
+                    )
+                    .await?;
+                PoolKind::Agent(Arc::new(tokio::sync::Mutex::new(client)))
             }
             DatabaseType::Gaussdb => {
                 let client = db::gaussdb_driver::connect(
@@ -404,9 +414,15 @@ impl AppState {
             configs
                 .get(connection_id)
                 .map(|c| {
-                    c.db_type == DatabaseType::Oracle
-                        || c.db_type == DatabaseType::Elasticsearch
-                        || c.db_type == DatabaseType::Dameng
+                    matches!(
+                        c.db_type,
+                        DatabaseType::Oracle
+                            | DatabaseType::Elasticsearch
+                            | DatabaseType::Dameng
+                            | DatabaseType::Kingbase
+                            | DatabaseType::Vastbase
+                            | DatabaseType::Goldendb
+                    )
                 })
                 .unwrap_or(false)
         };
@@ -449,6 +465,7 @@ pub async fn probe_connection_endpoint(config: &ConnectionConfig, host: &str, po
         DatabaseType::Sqlite | DatabaseType::DuckDb => Ok(()),
         DatabaseType::MongoDb if config.connection_string.as_deref().is_some_and(|value| !value.is_empty()) => Ok(()),
         DatabaseType::Jdbc => Ok(()),
+        DatabaseType::Dameng | DatabaseType::Kingbase | DatabaseType::Vastbase | DatabaseType::Goldendb => Ok(()),
         _ => db::probe_tcp_endpoint(&format!("{:?}", config.db_type), host, port).await,
     }
 }
