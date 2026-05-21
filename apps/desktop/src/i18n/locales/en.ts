@@ -589,6 +589,7 @@ export default {
     noSql: "No SQL to process",
     sqlPreview: "SQL Preview",
     copySql: "Copy SQL",
+    copyCode: "Copy Code",
     executeSql: "Execute SQL",
     copyAll: "Copy All",
     copied: "Copied",

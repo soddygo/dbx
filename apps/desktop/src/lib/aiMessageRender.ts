@@ -8,6 +8,8 @@ export interface AiMessageCodeSegment {
   type: "code";
   content: string;
   lang: string;
+  html: string;
+  isSql: boolean;
 }
 
 export type AiMessageRenderSegment = AiMessageTextSegment | AiMessageCodeSegment;
@@ -21,9 +23,26 @@ interface MessageSegment {
 export interface AiMessageRendererOptions {
   maxEntries?: number;
   markdown: (text: string) => string;
+  highlightCode?: (content: string, lang: string) => string;
 }
 
 const DEFAULT_MAX_ENTRIES = 100;
+const SQL_LANGUAGES = new Map([
+  ["sql", "SQL"],
+  ["mysql", "MYSQL"],
+  ["postgres", "POSTGRESQL"],
+  ["postgresql", "POSTGRESQL"],
+  ["sqlite", "SQLITE"],
+  ["tsql", "TSQL"],
+  ["clickhouse", "CLICKHOUSE"],
+]);
+const SHELL_LANGUAGES = new Map([
+  ["bash", "BASH"],
+  ["sh", "SHELL"],
+  ["shell", "SHELL"],
+  ["zsh", "ZSH"],
+]);
+const SQL_LANGUAGE_LABELS = new Set(SQL_LANGUAGES.values());
 
 export function createAiMessageRenderer(options: AiMessageRendererOptions) {
   const maxEntries = Math.max(1, Math.floor(options.maxEntries ?? DEFAULT_MAX_ENTRIES));
@@ -41,7 +60,14 @@ export function createAiMessageRenderer(options: AiMessageRendererOptions) {
       if (segment.type === "text") {
         return { type: "text", content: segment.content, html: options.markdown(segment.content) };
       }
-      return { type: "code", content: segment.content, lang: segment.lang ?? "SQL" };
+      const lang = normalizeAiCodeLanguage(segment.lang);
+      return {
+        type: "code",
+        content: segment.content,
+        html: options.highlightCode?.(segment.content, lang) ?? escapeHtml(segment.content),
+        lang,
+        isSql: isSqlAiCodeLanguage(lang),
+      };
     });
 
     cache.set(content, rendered);
@@ -66,9 +92,9 @@ export function parseAiMessage(text: string): MessageSegment[] {
   let i = 0;
 
   while (i < lines.length) {
-    const fenceMatch = lines[i].match(/^```(sql|mysql|postgresql|sqlite|tsql|clickhouse)?\s*$/i);
+    const fenceMatch = lines[i].match(/^```([a-zA-Z0-9_+.-]*)\s*$/);
     if (fenceMatch) {
-      const lang = (fenceMatch[1] || "sql").toUpperCase();
+      const lang = fenceMatch[1] || "sql";
       const codeLines: string[] = [];
       i++;
       while (i < lines.length && !/^```\s*$/.test(lines[i])) {
@@ -80,7 +106,7 @@ export function parseAiMessage(text: string): MessageSegment[] {
       if (content) segments.push({ type: "code", lang, content });
     } else {
       const textLines: string[] = [];
-      while (i < lines.length && !/^```(sql|mysql|postgresql|sqlite|tsql|clickhouse)?\s*$/i.test(lines[i])) {
+      while (i < lines.length && !/^```([a-zA-Z0-9_+.-]*)\s*$/.test(lines[i])) {
         textLines.push(lines[i]);
         i++;
       }
@@ -90,4 +116,18 @@ export function parseAiMessage(text: string): MessageSegment[] {
   }
 
   return segments;
+}
+
+export function normalizeAiCodeLanguage(lang?: string): string {
+  const key = (lang || "sql").trim().toLowerCase();
+  if (!key) return "SQL";
+  return SQL_LANGUAGES.get(key) || SHELL_LANGUAGES.get(key) || (key === "json" ? "JSON" : key.toUpperCase());
+}
+
+export function isSqlAiCodeLanguage(lang: string): boolean {
+  return SQL_LANGUAGE_LABELS.has(lang);
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

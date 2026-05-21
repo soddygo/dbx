@@ -535,6 +535,7 @@ export default {
     noSql: "No hay SQL para procesar",
     sqlPreview: "Vista previa de SQL",
     copySql: "Copiar SQL",
+    copyCode: "Copiar código",
     executeSql: "Ejecutar SQL",
     copyAll: "Copiar todo",
     copied: "Copiado",
