@@ -659,7 +659,7 @@ onUnmounted(() => {
                   <span
                     v-if="driver.jre"
                     class="rounded-full px-2 py-0.5 text-[11px]"
-                    :class="driver.jre !== '17' ? 'bg-blue-500/10 text-blue-600' : 'bg-muted text-muted-foreground'"
+                    :class="driver.jre !== '21' ? 'bg-blue-500/10 text-blue-600' : 'bg-muted text-muted-foreground'"
                     >JRE {{ driver.jre }}</span
                   >
                   <template v-if="driver.installed">

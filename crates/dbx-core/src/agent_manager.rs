@@ -8,7 +8,7 @@ use crate::database_capabilities;
 use crate::db::agent_driver::{AgentDriverClient, AgentMethod};
 use crate::models::connection::DatabaseType;
 
-pub const DEFAULT_JRE_KEY: &str = "17";
+pub const DEFAULT_JRE_KEY: &str = "21";
 
 fn default_jre_key() -> String {
     DEFAULT_JRE_KEY.to_string()
@@ -64,12 +64,12 @@ mod tests {
     #[test]
     fn resolves_managed_java_runtime_by_default() {
         let manager = test_manager("managed");
-        let java = manager.jre_java_path("17");
+        let java = manager.jre_java_path(DEFAULT_JRE_KEY);
         touch(&java);
 
         let state = AgentState::default();
 
-        assert_eq!(manager.resolve_java_runtime(&state, "17").unwrap(), java);
+        assert_eq!(manager.resolve_java_runtime(&state, DEFAULT_JRE_KEY).unwrap(), java);
     }
 
     #[test]
@@ -85,7 +85,7 @@ mod tests {
             ..AgentState::default()
         };
 
-        assert_eq!(manager.resolve_java_runtime(&state, "17").unwrap(), custom_java);
+        assert_eq!(manager.resolve_java_runtime(&state, DEFAULT_JRE_KEY).unwrap(), custom_java);
     }
 
     #[test]
@@ -99,7 +99,7 @@ mod tests {
             ..AgentState::default()
         };
 
-        let err = manager.resolve_java_runtime(&state, "17").unwrap_err();
+        let err = manager.resolve_java_runtime(&state, DEFAULT_JRE_KEY).unwrap_err();
 
         assert!(err.contains("Custom Java runtime does not exist"));
     }

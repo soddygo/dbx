@@ -40,7 +40,7 @@ public final class DbxJdbcPlugin {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final int MAX_ROWS = 10_000;
     private static final JdbcDriverQuirks DEFAULT_QUIRKS = new JdbcDriverQuirks(false, false);
-    private static final JdbcDriverQuirks YASHAN_QUIRKS = new JdbcDriverQuirks(true, false);
+    private static final JdbcDriverQuirks YASHAN_QUIRKS = new JdbcDriverQuirks(true, true);
     private static final JdbcDriverQuirks ORACLE_QUIRKS = new JdbcDriverQuirks(false, true);
     private static final List<JdbcDriverQuirkRule> DRIVER_QUIRK_RULES = List.of(
         new JdbcDriverQuirkRule("jdbc:yasdb:", YASHAN_QUIRKS),

@@ -7,8 +7,8 @@ use dbx_core::agent_manager::{
 };
 use dbx_core::agent_service::{
     build_agent_list, download_temp_path, fetch_registry, find_local_agent_jar, github_url_to_r2_path,
-    import_agent_jar, import_offline_zip, install_local_agent, invalidate_registry_cache, replace_download,
-    OfflineImportProgress,
+    import_agent_jar, import_offline_zip, install_local_agent, invalidate_registry_cache, jre_needs_install,
+    replace_download, OfflineImportProgress,
 };
 use dbx_core::connection::AppState;
 
@@ -51,7 +51,7 @@ pub async fn install_agent(
         return Err(format!("Unknown driver type: {db_type}"));
     };
     let jre_key = &driver.jre;
-    let needs_jre = am.load_state().java_runtime.mode == JavaRuntimeMode::Managed && !am.is_jre_installed(jre_key);
+    let needs_jre = jre_needs_install(am, &registry, jre_key);
 
     if needs_jre {
         let jre_info =
@@ -83,7 +83,11 @@ pub async fn install_agent(
                 "step": "jre-extract", "downloaded": 0u64, "total": 0u64,
             }),
         );
-        extract_archive(&jre_archive, &am.jre_dir(jre_key))?;
+        let jre_dir = am.jre_dir(jre_key);
+        if jre_dir.exists() {
+            std::fs::remove_dir_all(&jre_dir).map_err(|e| format!("Failed to remove old JRE: {e}"))?;
+        }
+        extract_archive(&jre_archive, &jre_dir)?;
         std::fs::remove_file(&jre_archive).ok();
     }
 
@@ -137,7 +141,7 @@ pub async fn upgrade_all_agents(app: tauri::AppHandle, state: State<'_, Arc<AppS
         let db_type = &agent.db_type;
         let driver = registry.drivers.get(db_type).ok_or_else(|| format!("Unknown driver type: {db_type}"))?;
         let jre_key = &driver.jre;
-        let needs_jre = am.load_state().java_runtime.mode == JavaRuntimeMode::Managed && !am.is_jre_installed(jre_key);
+        let needs_jre = jre_needs_install(am, &registry, jre_key);
 
         if needs_jre {
             let jre_info =
@@ -171,7 +175,11 @@ pub async fn upgrade_all_agents(app: tauri::AppHandle, state: State<'_, Arc<AppS
                     "db_type": db_type, "current": current, "total_drivers": total_drivers,
                 }),
             );
-            extract_archive(&jre_archive, &am.jre_dir(jre_key))?;
+            let jre_dir = am.jre_dir(jre_key);
+            if jre_dir.exists() {
+                std::fs::remove_dir_all(&jre_dir).map_err(|e| format!("Failed to remove old JRE: {e}"))?;
+            }
+            extract_archive(&jre_archive, &jre_dir)?;
             std::fs::remove_file(&jre_archive).ok();
         }
 

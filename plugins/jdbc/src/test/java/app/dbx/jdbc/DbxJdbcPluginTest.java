@@ -74,7 +74,9 @@ final class DbxJdbcPluginTest {
             """);
 
         assertEquals(true, DbxJdbcPlugin.driverQuirks(yashan).skipExecutionContext());
+        assertEquals(true, DbxJdbcPlugin.driverQuirks(yashan).useOracleMetadata());
         assertEquals(false, DbxJdbcPlugin.driverQuirks(h2).skipExecutionContext());
+        assertEquals(false, DbxJdbcPlugin.driverQuirks(h2).useOracleMetadata());
     }
 
     @Test

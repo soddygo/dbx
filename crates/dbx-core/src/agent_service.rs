@@ -1,7 +1,9 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::agent_manager::{AgentDriverInfo, AgentManager, AgentRegistry, InstalledDriver, DEFAULT_JRE_KEY};
+use crate::agent_manager::{
+    AgentDriverInfo, AgentManager, AgentRegistry, InstalledDriver, JavaRuntimeMode, DEFAULT_JRE_KEY,
+};
 
 const REGISTRY_PATH: &str = "https://github.com/t8y2/dbx-agents/releases/latest/download/agent-registry.json";
 const REGISTRY_R2_PATH: &str = "agents/agent-registry.json";
@@ -56,6 +58,11 @@ pub fn build_agent_list(am: &AgentManager, registry: Option<&AgentRegistry>) -> 
                 .map(|r| r.jre.clone())
                 .or_else(|| local.map(|l| l.jre.clone()))
                 .unwrap_or_else(|| DEFAULT_JRE_KEY.to_string());
+            let remote_jre_version = registry.and_then(|r| r.resolve_jre(&jre_key)).map(|j| &j.version);
+            let local_jre_version = local_state.jre_versions.get(&jre_key);
+            let jre_update_available = installed
+                && (!am.is_jre_installed(&jre_key)
+                    || remote_jre_version.is_some_and(|version| local_jre_version != Some(version)));
             AgentDriverInfo {
                 db_type: key.to_string(),
                 label: label.to_string(),
@@ -64,7 +71,7 @@ pub fn build_agent_list(am: &AgentManager, registry: Option<&AgentRegistry>) -> 
                 installed,
                 installed_version: local.map(|l| l.version.clone()),
                 update_available: match (local, remote) {
-                    (Some(l), Some(r)) => l.version != r.version,
+                    (Some(l), Some(r)) => l.version != r.version || jre_update_available,
                     _ => false,
                 },
                 jre: jre_key.clone(),
@@ -72,6 +79,17 @@ pub fn build_agent_list(am: &AgentManager, registry: Option<&AgentRegistry>) -> 
             }
         })
         .collect()
+}
+
+pub fn jre_needs_install(am: &AgentManager, registry: &AgentRegistry, jre_key: &str) -> bool {
+    let state = am.load_state();
+    if state.java_runtime.mode != JavaRuntimeMode::Managed {
+        return false;
+    }
+    if !am.is_jre_installed(jre_key) {
+        return true;
+    }
+    registry.resolve_jre(jre_key).is_some_and(|jre| state.jre_versions.get(jre_key) != Some(&jre.version))
 }
 
 pub fn local_agent_jar_candidates(db_type: &str) -> Vec<PathBuf> {

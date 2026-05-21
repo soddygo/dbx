@@ -1,7 +1,7 @@
 use dbx_core::agent_manager::{
-    AgentManager, AgentRegistry, ArtifactInfo, DriverInfo, InstalledDriver, DEFAULT_JRE_KEY,
+    AgentManager, AgentRegistry, ArtifactInfo, DriverInfo, InstalledDriver, JreInfo, DEFAULT_JRE_KEY,
 };
-use dbx_core::agent_service::{build_agent_list, github_url_to_r2_path, local_agent_jar_candidates};
+use dbx_core::agent_service::{build_agent_list, github_url_to_r2_path, jre_needs_install, local_agent_jar_candidates};
 use dbx_core::agent_service::{is_app_version_compatible, replace_download};
 
 fn test_manager(name: &str) -> AgentManager {
@@ -22,6 +22,15 @@ fn registry_with_driver(db_type: &str, version: &str, jre: &str) -> AgentRegistr
         },
     );
     AgentRegistry { jre: None, jres: std::collections::HashMap::new(), drivers }
+}
+
+fn registry_with_jre_driver(db_type: &str, driver_version: &str, jre: &str, jre_version: &str) -> AgentRegistry {
+    let mut registry = registry_with_driver(db_type, driver_version, jre);
+    registry.jres.insert(
+        jre.to_string(),
+        JreInfo { version: jre_version.to_string(), platforms: std::collections::HashMap::new() },
+    );
+    registry
 }
 
 #[test]
@@ -70,6 +79,56 @@ fn agent_list_marks_installed_driver_update_when_registry_version_differs() {
 }
 
 #[test]
+fn agent_list_marks_update_when_installed_managed_jre_version_differs() {
+    let manager = test_manager("jre-update");
+    let jar_path = manager.driver_jar_path("h2");
+    let java_path = manager.jre_java_path(DEFAULT_JRE_KEY);
+    std::fs::create_dir_all(jar_path.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(java_path.parent().unwrap()).unwrap();
+    std::fs::write(&jar_path, b"jar").unwrap();
+    std::fs::write(&java_path, b"java").unwrap();
+    manager
+        .save_state(&dbx_core::agent_manager::AgentState {
+            jre_versions: [(DEFAULT_JRE_KEY.to_string(), "21.0.10".to_string())].into_iter().collect(),
+            installed_drivers: [(
+                "h2".to_string(),
+                InstalledDriver {
+                    version: "0.2.0".to_string(),
+                    installed_at: "2026-05-18T00:00:00Z".to_string(),
+                    jre: DEFAULT_JRE_KEY.to_string(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        })
+        .unwrap();
+    let registry = registry_with_jre_driver("h2", "0.2.0", DEFAULT_JRE_KEY, "21.0.11");
+
+    let agents = build_agent_list(&manager, Some(&registry));
+    let h2 = agents.iter().find(|agent| agent.db_type == "h2").unwrap();
+
+    assert!(h2.update_available);
+}
+
+#[test]
+fn jre_needs_install_when_managed_runtime_version_differs() {
+    let manager = test_manager("jre-needs-install");
+    let java_path = manager.jre_java_path(DEFAULT_JRE_KEY);
+    std::fs::create_dir_all(java_path.parent().unwrap()).unwrap();
+    std::fs::write(&java_path, b"java").unwrap();
+    manager
+        .save_state(&dbx_core::agent_manager::AgentState {
+            jre_versions: [(DEFAULT_JRE_KEY.to_string(), "21.0.10".to_string())].into_iter().collect(),
+            ..Default::default()
+        })
+        .unwrap();
+    let registry = registry_with_jre_driver("h2", "0.2.0", DEFAULT_JRE_KEY, "21.0.11");
+
+    assert!(jre_needs_install(&manager, &registry, DEFAULT_JRE_KEY));
+}
+
+#[test]
 fn local_agent_jar_candidates_include_sibling_build_output() {
     let candidates = local_agent_jar_candidates("tdengine");
 
@@ -79,8 +138,8 @@ fn local_agent_jar_candidates_include_sibling_build_output() {
 #[test]
 fn github_agent_asset_urls_map_to_r2_paths_by_category() {
     assert_eq!(
-        github_url_to_r2_path("https://github.com/t8y2/dbx-agents/releases/download/v1/jre-17.tar.gz", "jre"),
-        "agents/jre/jre-17.tar.gz"
+        github_url_to_r2_path("https://github.com/t8y2/dbx-agents/releases/download/v1/dbx-jre-21.tar.gz", "jre"),
+        "agents/jre/dbx-jre-21.tar.gz"
     );
     assert_eq!(
         github_url_to_r2_path("https://github.com/t8y2/dbx-agents/releases/download/v1/dbx-agent-h2.jar", "driver"),
