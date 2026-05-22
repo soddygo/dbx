@@ -280,7 +280,28 @@ impl AppState {
                 let connect_result =
                     client.call_method::<serde_json::Value>(AgentMethod::Connect, connect_params.clone()).await;
                 if let Err(err) = connect_result {
-                    if should_retry_oracle_with_10g_driver(&db_config, &err) {
+                    if let Some(alternate_config) = oracle_alternate_connect_config(&db_config, &err) {
+                        log::warn!(
+                            "Oracle connect failed with {:?} descriptor: {}. Retrying with {:?} descriptor.",
+                            db_config.oracle_connection_type,
+                            err,
+                            alternate_config.oracle_connection_type
+                        );
+                        client
+                            .call_method::<serde_json::Value>(
+                                AgentMethod::Connect,
+                                agent_connect_params(
+                                    &alternate_config,
+                                    &host,
+                                    port,
+                                    alternate_config.effective_database().unwrap_or(""),
+                                ),
+                            )
+                            .await
+                            .map_err(|alternate_err| {
+                                format!("{err}\n\nFallback with alternate Oracle descriptor failed: {alternate_err}")
+                            })?;
+                    } else if should_retry_oracle_with_10g_driver(&db_config, &err) {
                         log::warn!(
                             "Oracle connect failed with profile {:?}: {}. Retrying with oracle-10g profile.",
                             db_config.driver_profile,
@@ -616,6 +637,19 @@ pub fn should_retry_oracle_with_10g_driver(config: &ConnectionConfig, err: &str)
     normalized.contains("ora-12541") || normalized.contains("no listener") || err.contains("没有监听程序")
 }
 
+pub fn oracle_alternate_connect_config(config: &ConnectionConfig, err: &str) -> Option<ConnectionConfig> {
+    if !should_retry_oracle_with_10g_driver(config, err) {
+        return None;
+    }
+
+    let mut retry = config.clone();
+    retry.oracle_connection_type = Some(
+        if config.oracle_connection_type.as_deref() == Some("service_name") { "sid" } else { "service_name" }
+            .to_string(),
+    );
+    Some(retry)
+}
+
 fn sap_hana_jdbc_connection_string(config: &ConnectionConfig, host: &str, port: u16, database: &str) -> String {
     let database = database.trim();
     let params = config.url_params.as_deref().unwrap_or("").trim().trim_start_matches('?');
@@ -864,6 +898,38 @@ mod tests {
             &config,
             "Agent RPC error (-1): ORA-01017: invalid username/password"
         ));
+    }
+
+    #[test]
+    fn oracle_listener_errors_can_retry_with_alternate_connect_descriptor() {
+        let mut config = mysql_config(Some("ORCL"));
+        config.db_type = DatabaseType::Oracle;
+        config.driver_profile = Some("oracle".to_string());
+        config.oracle_connection_type = Some("service_name".to_string());
+
+        let retry = super::oracle_alternate_connect_config(&config, "Agent RPC error (-1): ORA-12541: TNS:no listener")
+            .expect("listener errors should allow alternate descriptor retry");
+        assert_eq!(retry.driver_profile.as_deref(), Some("oracle"));
+        assert_eq!(retry.oracle_connection_type.as_deref(), Some("sid"));
+
+        let service_retry = super::oracle_alternate_connect_config(
+            &retry,
+            "Agent RPC error (-1): ORA-12541: host xxx port 1521 中没有监听程序",
+        )
+        .expect("SID listener errors should allow service-name retry");
+        assert_eq!(service_retry.oracle_connection_type.as_deref(), Some("service_name"));
+    }
+
+    #[test]
+    fn oracle_alternate_descriptor_retry_skips_non_listener_errors_and_10g_profiles() {
+        let mut config = mysql_config(Some("ORCL"));
+        config.db_type = DatabaseType::Oracle;
+        config.driver_profile = Some("oracle".to_string());
+
+        assert!(super::oracle_alternate_connect_config(&config, "ORA-01017: invalid username/password").is_none());
+
+        config.driver_profile = Some("oracle-10g".to_string());
+        assert!(super::oracle_alternate_connect_config(&config, "ORA-12541: TNS:no listener").is_none());
     }
 
     #[test]

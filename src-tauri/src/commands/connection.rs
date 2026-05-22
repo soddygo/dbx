@@ -3,8 +3,8 @@ use tauri::State;
 
 pub use dbx_core::connection::{
     agent_connect_params, connection_url_for_endpoint, expand_tilde, metadata_connection_config,
-    mongo_legacy_error_with_auth_hint, probe_connection_endpoint, redacted_connection_url_for_endpoint,
-    should_retry_oracle_with_10g_driver, AppState, MysqlMode, PoolKind,
+    mongo_legacy_error_with_auth_hint, oracle_alternate_connect_config, probe_connection_endpoint,
+    redacted_connection_url_for_endpoint, should_retry_oracle_with_10g_driver, AppState, MysqlMode, PoolKind,
 };
 use dbx_core::database_capabilities;
 use dbx_core::db;
@@ -35,7 +35,25 @@ async fn test_agent_connection(
         .await;
 
     if let Err(err) = result {
-        if should_retry_oracle_with_10g_driver(config, &err) {
+        if let Some(alternate_config) = oracle_alternate_connect_config(config, &err) {
+            state
+                .agent_manager
+                .call_daemon_method::<serde_json::Value>(
+                    &alternate_config.db_type,
+                    alternate_config.driver_profile.as_deref(),
+                    AgentMethod::TestConnection,
+                    agent_connect_params(
+                        &alternate_config,
+                        host,
+                        port,
+                        alternate_config.database.as_deref().unwrap_or(""),
+                    ),
+                )
+                .await
+                .map_err(|alternate_err| {
+                    format!("{err}\n\nFallback with alternate Oracle descriptor failed: {alternate_err}")
+                })?;
+        } else if should_retry_oracle_with_10g_driver(config, &err) {
             state
                 .agent_manager
                 .call_daemon_method::<serde_json::Value>(
@@ -65,7 +83,22 @@ async fn connect_agent_pool(
     let connect_result = client.call_method::<serde_json::Value>(AgentMethod::Connect, connect_params.clone()).await;
 
     if let Err(err) = connect_result {
-        if should_retry_oracle_with_10g_driver(config, &err) {
+        if let Some(alternate_config) = oracle_alternate_connect_config(config, &err) {
+            client
+                .call_method::<serde_json::Value>(
+                    AgentMethod::Connect,
+                    agent_connect_params(
+                        &alternate_config,
+                        host,
+                        port,
+                        alternate_config.effective_database().unwrap_or(""),
+                    ),
+                )
+                .await
+                .map_err(|alternate_err| {
+                    format!("{err}\n\nFallback with alternate Oracle descriptor failed: {alternate_err}")
+                })?;
+        } else if should_retry_oracle_with_10g_driver(config, &err) {
             let mut fallback_client = state.agent_manager.spawn(&config.db_type, Some("oracle-10g")).await?;
             fallback_client
                 .call_method::<serde_json::Value>(AgentMethod::Connect, connect_params)
