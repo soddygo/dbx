@@ -113,3 +113,10 @@ export function isDeleteCurrentRowShortcut(event: ShortcutLikeEvent, shortcuts?:
 export function isCancelSearchShortcut(event: ShortcutLikeEvent, shortcuts?: Partial<ShortcutSettings>): boolean {
   return matchesShortcut(event, actionShortcut("cancelSearch", shortcuts));
 }
+
+export function isBrowserReloadShortcut(event: ShortcutLikeEvent): boolean {
+  if (event.isComposing || event.altKey) return false;
+  const key = normalizeKey(event.key);
+  if (key === "F5") return true;
+  return key === "r" && (!!event.metaKey || !!event.ctrlKey);
+}

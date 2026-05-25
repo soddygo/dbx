@@ -36,6 +36,7 @@ import { isTauriRuntime } from "@/lib/tauriRuntime";
 import { sqlFileTitleFromPath } from "@/lib/sqlFileOpen";
 import { parseConnectionDeepLink, type ConnectionDeepLinkDraft } from "@/lib/connectionDeepLink";
 import {
+  isBrowserReloadShortcut,
   isCloseTabShortcut,
   isExecuteSqlShortcut,
   isFocusSearchShortcut,
@@ -656,6 +657,11 @@ function handleKeydown(e: KeyboardEvent) {
     e.preventDefault();
     e.stopPropagation();
     tryExecute();
+    return;
+  }
+  if (isDesktop && isBrowserReloadShortcut(e)) {
+    e.preventDefault();
+    e.stopPropagation();
   }
 }
 

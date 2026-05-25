@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import test from "node:test";
 import {
   eventToShortcut,
+  isBrowserReloadShortcut,
   isCancelSearchShortcut,
   isCloseTabShortcut,
   isExecuteSqlShortcut,
@@ -100,6 +101,14 @@ test("matches custom shortcut settings for refreshing data", () => {
     isRefreshDataShortcut({ key: "r", metaKey: true, shiftKey: true } as any, { refreshData: "Shift+Mod+R" } as any),
     true,
   );
+});
+
+test("detects browser reload shortcuts for desktop suppression", () => {
+  assert.equal(isBrowserReloadShortcut({ key: "r", ctrlKey: true }), true);
+  assert.equal(isBrowserReloadShortcut({ key: "R", metaKey: true, shiftKey: true }), true);
+  assert.equal(isBrowserReloadShortcut({ key: "F5" }), true);
+  assert.equal(isBrowserReloadShortcut({ key: "r", altKey: true, ctrlKey: true }), false);
+  assert.equal(isBrowserReloadShortcut({ key: "r", ctrlKey: true, isComposing: true }), false);
 });
 
 test("ignores focus search shortcut while composing", () => {
