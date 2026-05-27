@@ -123,6 +123,10 @@ const filteredNodes = computed(() => {
   const q = deferredSearchQuery.value;
   if (q) {
     nodes = filterSidebarTree(nodes, q, searchCollapsedIds.value, searchableNodeTypes.value);
+    nodes = nodes.filter((node) => {
+      if (node.type === "connection-group") return true;
+      return node.connectionId ? store.connectedIds.has(node.connectionId) : true;
+    });
   }
 
   return nodes;
