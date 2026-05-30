@@ -190,6 +190,7 @@ pub enum DatabaseType {
     Kylin,
     Sundb,
     Tdengine,
+    Xugu,
     #[serde(rename = "iris")]
     Iris,
     Jdbc,
@@ -377,6 +378,7 @@ impl ConnectionConfig {
             DatabaseType::Kylin => format!("kylin://{host}:{port}{db_part}"),
             DatabaseType::Sundb => format!("sundb://{host}:{port}{db_part}"),
             DatabaseType::Tdengine => format!("tdengine://{host}:{port}{db_part}"),
+            DatabaseType::Xugu => format!("xugu://{host}:{port}{db_part}"),
             DatabaseType::Iris => format!("iris://{host}:{port}{db_part}"),
             DatabaseType::Jdbc => "jdbc:<redacted>".to_string(),
         }
@@ -537,6 +539,9 @@ impl ConnectionConfig {
             }
             DatabaseType::Tdengine => {
                 format!("tdengine://{}:{}@{host}:{port}{db_part}", username, password)
+            }
+            DatabaseType::Xugu => {
+                format!("xugu://{}:{}@{host}:{port}{db_part}", username, password)
             }
             DatabaseType::Iris => {
                 format!("iris://{}:{}@{host}:{port}{db_part}", username, password)

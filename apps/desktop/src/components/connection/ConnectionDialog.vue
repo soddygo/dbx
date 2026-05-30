@@ -257,6 +257,7 @@ const driverProfiles: Record<
   sundb: { type: "sundb", port: 22000, user: "root", label: "SunDB", icon: "sundb" },
   jdbc: { type: "jdbc", port: 0, user: "", label: "JDBC", icon: "jdbc" },
   tdengine: { type: "tdengine", port: 6041, user: "root", label: "TDengine", icon: "tdengine" },
+  xugu: { type: "xugu", port: 5138, user: "", label: "虚谷 XuguDB", icon: "xugu" },
   iris: { type: "iris", port: 1972, user: "_SYSTEM", label: "IRIS", icon: "iris" },
   custom_mysql: {
     type: "mysql",
@@ -486,6 +487,7 @@ const iconTypeMap: Record<string, string> = {
   redshift: "redshift",
   cockroachdb: "cockroachdb",
   tdengine: "tdengine",
+  xugu: "xugu",
   dm: "dm",
   h2: "h2",
   snowflake: "snowflake",
@@ -554,6 +556,7 @@ const dbOptions = [
   { value: "bigquery", label: "BigQuery" },
   { value: "kylin", label: "Kylin" },
   { value: "sundb", label: "SunDB" },
+  { value: "xugu", label: "虚谷 XuguDB" },
   { value: "iris", label: "IRIS" },
   { value: "jdbc", label: "JDBC" },
   { value: "custom_mysql", label: "Custom (MySQL)" },

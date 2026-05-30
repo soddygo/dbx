@@ -41,6 +41,7 @@ export type DatabaseType =
   | "kylin"
   | "sundb"
   | "tdengine"
+  | "xugu"
   | "iris"
   | "jdbc";
 

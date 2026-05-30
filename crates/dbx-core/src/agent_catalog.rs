@@ -206,6 +206,13 @@ const AGENT_CATALOG: &[AgentCatalogEntry] = &[
         profiles: &[],
     },
     AgentCatalogEntry {
+        db_type: DatabaseType::Xugu,
+        key: "xugu",
+        label: "虚谷 XuguDB",
+        store_visible: true,
+        profiles: &[],
+    },
+    AgentCatalogEntry {
         db_type: DatabaseType::MongoDb,
         key: "mongodb",
         label: "MongoDB (Legacy)",

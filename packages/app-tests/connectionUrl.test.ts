@@ -71,6 +71,20 @@ test("parses TDengine WebSocket JDBC URLs", () => {
   assert.equal(parsed.urlParams, "timezone=UTC");
 });
 
+test("parses XuguDB JDBC URLs", () => {
+  const parsed = parseConnectionUrl("jdbc:xugu://alice:secret@xugu.example.com:5138/demo?charset=utf8");
+
+  assert.equal(parsed.dbType, "xugu");
+  assert.equal(parsed.driverProfile, "xugu");
+  assert.equal(parsed.driverLabel, "XuguDB");
+  assert.equal(parsed.host, "xugu.example.com");
+  assert.equal(parsed.port, 5138);
+  assert.equal(parsed.username, "alice");
+  assert.equal(parsed.password, "secret");
+  assert.equal(parsed.database, "demo");
+  assert.equal(parsed.urlParams, "charset=utf8");
+});
+
 test("parses UCanAccess JDBC URLs as Access database files", () => {
   const parsed = parseConnectionUrl("jdbc:ucanaccess:///Users/me/data/Northwind.accdb;memory=false");
 

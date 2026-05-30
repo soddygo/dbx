@@ -35,6 +35,13 @@ test("treats TDengine databases as schema tree roots and agent driver databases"
   assert.equal(supportsDriverManagement("tdengine"), true);
 });
 
+test("treats XuguDB as a schema-aware agent driver database", () => {
+  assert.equal(TREE_SCHEMA_TYPES.has("xugu"), true);
+  assert.equal(SCHEMA_AWARE_TYPES.has("xugu"), true);
+  assert.equal(supportsDatabaseSearch("xugu"), true);
+  assert.equal(supportsDriverManagement("xugu"), true);
+});
+
 test("treats Access as a local single-database agent driver", () => {
   assert.equal(SCHEMA_AWARE_TYPES.has("access"), false);
   assert.equal(supportsDriverManagement("access"), true);

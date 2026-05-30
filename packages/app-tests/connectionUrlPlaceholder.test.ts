@@ -20,6 +20,7 @@ const expected: Record<string, string> = {
   elasticsearch: "http://user:password@host:port",
   dameng: "dm://user:password@host:port",
   tdengine: "tdengine://user:password@host:6041/database",
+  xugu: "xugu://user:password@host:5138/database",
   bigquery: "bigquery://https://www.googleapis.com/bigquery/v2:443/project-id",
   jdbc: "jdbc:mysql://host:3306/database",
 };

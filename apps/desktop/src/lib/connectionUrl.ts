@@ -45,6 +45,7 @@ const SCHEME_PROFILES: Record<string, ConnectionProfile> = {
   opengauss: { type: "gaussdb", profile: "opengauss", label: "openGauss", defaultPort: 5432 },
   tdengine: { type: "tdengine", profile: "tdengine", label: "TDengine", defaultPort: 6041 },
   "taos-ws": { type: "tdengine", profile: "tdengine", label: "TDengine", defaultPort: 6041 },
+  xugu: { type: "xugu", profile: "xugu", label: "XuguDB", defaultPort: 5138 },
   iris: { type: "iris", profile: "iris", label: "IRIS", defaultPort: 1972 },
 };
 

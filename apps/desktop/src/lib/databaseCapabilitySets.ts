@@ -25,6 +25,7 @@ export const SCHEMA_AWARE_TYPES = new Set<DatabaseType>([
   "trino",
   "db2",
   "tdengine",
+  "xugu",
   "iris",
   "duckdb",
 ]);
@@ -98,6 +99,7 @@ export const DATABASE_SEARCH_SUPPORTED_TYPES = new Set<DatabaseType>([
   "kylin",
   "sundb",
   "tdengine",
+  "xugu",
   "iris",
 ]);
 
@@ -206,6 +208,7 @@ export const TREE_SCHEMA_TYPES = new Set<DatabaseType>([
   "trino",
   "h2",
   "tdengine",
+  "xugu",
   "iris",
   "duckdb",
 ]);
@@ -243,6 +246,7 @@ export const AGENT_DRIVER_TYPES = new Set<DatabaseType>([
   "sundb",
   "gaussdb",
   "tdengine",
+  "xugu",
   "iris",
 ]);
 

@@ -300,6 +300,7 @@ impl AppState {
             | DatabaseType::Kylin
             | DatabaseType::Sundb
             | DatabaseType::Tdengine
+            | DatabaseType::Xugu
             | DatabaseType::Iris
             | DatabaseType::Access => {
                 let connect_params =

@@ -450,6 +450,17 @@
       "defaultPort": 6041
     },
     {
+      "dbType": "xugu",
+      "label": "虚谷 XuguDB",
+      "runtimeMode": "agent",
+      "mcpMode": "bridge",
+      "agentKey": "xugu",
+      "singleConnectionPool": false,
+      "metadataConnectionScoped": false,
+      "skipTcpProbe": true,
+      "defaultPort": 5138
+    },
+    {
       "dbType": "jdbc",
       "label": "JDBC",
       "runtimeMode": "external",

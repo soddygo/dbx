@@ -38,6 +38,7 @@ export const BRIDGE_REQUIRED_TYPES = [
   "bigquery",
   "kylin",
   "sundb",
+  "xugu",
   "jdbc",
   "access",
 ] as const;
