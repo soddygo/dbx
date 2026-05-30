@@ -209,6 +209,7 @@ export default {
     deleted: "连接已删除",
     copied: "已复制",
     disconnected: "已断开连接",
+    databaseConnectionClosed: "已关闭数据库连接：{name}",
     duplicated: "连接已复制",
     groupDeleted: "分组已删除",
     loadFailed: "加载已保存连接失败：{message}",
@@ -816,6 +817,7 @@ export default {
   contextMenu: {
     openConnection: "打开连接",
     closeConnection: "关闭连接",
+    closeDatabaseConnection: "关闭数据库连接",
     deleteConnection: "删除连接",
     confirmDeleteTitle: "删除连接",
     confirmDeleteMessage: "确定要删除「{name}」吗？此操作不可撤销。",

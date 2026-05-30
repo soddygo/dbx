@@ -1411,6 +1411,17 @@ function disconnectConnection() {
   }
 }
 
+async function closeDatabaseConnection() {
+  const node = props.node;
+  if (node.type !== "database" || !node.connectionId || node.database == null) return;
+  try {
+    await connectionStore.closeDatabaseConnection(node.connectionId, node.database);
+    toast(t("connection.databaseConnectionClosed", { name: node.label }), 2000);
+  } catch (e: any) {
+    toast(t("connection.saveFailed", { message: e?.message || String(e) }), 5000);
+  }
+}
+
 function openTransfer() {
   if (props.node.connectionId) {
     connectionStore.transferSource = {
@@ -1593,6 +1604,18 @@ const isConnected = computed(
     !!props.node.connectionId &&
     connectionStore.connectedIds.has(props.node.connectionId),
 );
+const canCloseDatabaseConnection = computed(
+  () =>
+    props.node.type === "database" &&
+    !!props.node.connectionId &&
+    props.node.database != null &&
+    connectionStore.isTreeNodeChildrenLoaded(props.node.id),
+);
+const nodeIconClass = computed(() => {
+  const infoClass = getIconInfo(props.node)?.colorClass;
+  if (props.node.type !== "database") return infoClass;
+  return canCloseDatabaseConnection.value ? infoClass : "text-muted-foreground/65";
+});
 const canConfigureVisibleDatabases = computed(() => {
   if (props.node.type !== "connection" || !props.node.connectionId) return false;
   return connectionStore.getConfig(props.node.connectionId)?.db_type !== "elasticsearch";
@@ -2040,6 +2063,10 @@ function treeItemMenuItems(): ContextMenuItem[] {
     items.push({ label: t("diff.title"), action: openSchemaDiff, icon: ArrowRightLeft });
     items.push({ label: t("dataCompare.title"), action: openDataCompare, icon: ArrowRightLeft });
     items.push({ label: t("contextMenu.exportDatabase"), action: openDatabaseExport, icon: Download });
+    if (canCloseDatabaseConnection.value) {
+      items.push({ label: "", separator: true });
+      items.push({ label: t("contextMenu.closeDatabaseConnection"), action: closeDatabaseConnection, icon: Unplug });
+    }
     if (canDropDatabase.value || canDropSchema.value) {
       items.push({ label: "", separator: true });
     }
@@ -2258,8 +2285,8 @@ function treeItemMenuItems(): ContextMenuItem[] {
         <component
           v-else
           :is="getIconInfo(node)?.icon || Database"
-          class="w-3.5 h-3.5 shrink-0"
-          :class="getIconInfo(node)?.colorClass"
+          class="w-3.5 h-3.5 shrink-0 transition-colors"
+          :class="nodeIconClass"
         />
         <input
           v-if="isRenamingGroup"

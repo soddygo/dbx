@@ -210,6 +210,7 @@ export default {
     deleted: "Conexión eliminada",
     copied: "Copiado",
     disconnected: "Desconectado",
+    databaseConnectionClosed: "Conexión de base de datos cerrada: {name}",
     duplicated: "Conexión duplicada",
     groupDeleted: "Grupo eliminado",
     loadFailed: "Error al cargar las conexiones guardadas: {message}",
@@ -737,6 +738,7 @@ export default {
   contextMenu: {
     openConnection: "Abrir conexión",
     closeConnection: "Cerrar conexión",
+    closeDatabaseConnection: "Cerrar conexión de base de datos",
     deleteConnection: "Eliminar conexión",
     confirmDeleteTitle: "Eliminar conexión",
     confirmDeleteMessage: '¿Estás seguro de que deseas eliminar "{name}"? Esta acción no se puede deshacer.',

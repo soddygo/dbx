@@ -427,6 +427,10 @@ export const useConnectionStore = defineStore("connection", () => {
     return true;
   }
 
+  function isTreeNodeChildrenLoaded(nodeId: string): boolean {
+    return loadedTreeNodeChildrenIds.value.has(nodeId);
+  }
+
   function clearLoadedChildrenCache(prefix: string) {
     for (const id of loadedTreeNodeChildrenIds.value) {
       if (id === prefix || id.startsWith(`${prefix}:`)) {
@@ -509,16 +513,17 @@ export const useConnectionStore = defineStore("connection", () => {
     stopCreatingConnectionInGroup();
   }
 
-  function invalidateCompletionCache(connectionId: string) {
-    const cachePrefix = `${connectionId}:`;
+  function invalidateCompletionCache(connectionId: string, database?: string) {
+    const cachePrefix = database == null ? `${connectionId}:` : `${connectionId}:${database}:`;
+    const exactCacheKey = database == null ? null : `${connectionId}:${database}`;
     for (const key of Object.keys(completionTablesCache.value)) {
-      if (key.startsWith(cachePrefix)) delete completionTablesCache.value[key];
+      if (key === exactCacheKey || key.startsWith(cachePrefix)) delete completionTablesCache.value[key];
     }
     for (const key of Object.keys(completionColumnsCache.value)) {
-      if (key.startsWith(cachePrefix)) delete completionColumnsCache.value[key];
+      if (key === exactCacheKey || key.startsWith(cachePrefix)) delete completionColumnsCache.value[key];
     }
     for (const key of Object.keys(schemaListCache.value)) {
-      if (key.startsWith(cachePrefix)) delete schemaListCache.value[key];
+      if (key === exactCacheKey || key.startsWith(cachePrefix)) delete schemaListCache.value[key];
     }
   }
 
@@ -668,6 +673,17 @@ export const useConnectionStore = defineStore("connection", () => {
     if (shouldRemoveOneTimeConnection) {
       await removeConnection(connectionId);
     }
+  }
+
+  async function closeDatabaseConnection(connectionId: string, database: string) {
+    await api.closeDatabaseConnection(connectionId, database);
+    const node = findDatabaseTreeNode(treeNodes.value, connectionId, database);
+    if (node) {
+      node.isExpanded = false;
+      node.children = [];
+      clearLoadedChildrenCache(node.id);
+    }
+    invalidateCompletionCache(connectionId, database);
   }
 
   async function ensureConnected(connectionId: string) {
@@ -1841,7 +1857,9 @@ export const useConnectionStore = defineStore("connection", () => {
     stopCreatingConnectionInGroup,
     connect,
     disconnect,
+    closeDatabaseConnection,
     ensureConnected,
+    isTreeNodeChildrenLoaded,
     setBeforeConnectHandler,
     initFromDisk,
     loadDatabases,

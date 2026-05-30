@@ -213,6 +213,7 @@ export default {
     deleted: "Connection deleted",
     copied: "Copied",
     disconnected: "Disconnected",
+    databaseConnectionClosed: "Closed database connection: {name}",
     duplicated: "Connection duplicated",
     groupDeleted: "Group deleted",
     loadFailed: "Failed to load saved connections: {message}",
@@ -835,6 +836,7 @@ export default {
   contextMenu: {
     openConnection: "Open Connection",
     closeConnection: "Close Connection",
+    closeDatabaseConnection: "Close Database Connection",
     deleteConnection: "Delete Connection",
     confirmDeleteTitle: "Delete Connection",
     confirmDeleteMessage: 'Are you sure you want to delete "{name}"? This cannot be undone.',

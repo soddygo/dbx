@@ -516,6 +516,17 @@ pub async fn disconnect_db(state: State<'_, Arc<AppState>>, connection_id: Strin
 }
 
 #[tauri::command]
+pub async fn close_database_connection(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+) -> Result<bool, String> {
+    let database = database.trim();
+    let database = if database.is_empty() { None } else { Some(database) };
+    state.close_database_pool(&connection_id, database).await
+}
+
+#[tauri::command]
 pub async fn refresh_connections(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     state.refresh_connections().await;
     Ok(())

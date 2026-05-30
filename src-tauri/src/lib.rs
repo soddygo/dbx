@@ -276,6 +276,7 @@ pub fn run() {
             commands::connection::test_connection,
             commands::connection::connect_db,
             commands::connection::disconnect_db,
+            commands::connection::close_database_connection,
             commands::connection::refresh_connections,
             commands::connection::save_connections,
             commands::connection::load_connections,

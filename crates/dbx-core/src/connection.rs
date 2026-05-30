@@ -509,6 +509,33 @@ impl AppState {
         }
     }
 
+    pub async fn close_database_pool(&self, connection_id: &str, database: Option<&str>) -> Result<bool, String> {
+        let db_type = {
+            let configs = self.configs.read().await;
+            configs.get(connection_id).map(|c| c.db_type)
+        };
+        let base_pool_key = base_pool_key_for(db_type, connection_id, database, false);
+        let session_prefix = format!("{base_pool_key}:session:");
+        let mut conns = self.connections.write().await;
+        let keys_to_remove: Vec<String> = conns
+            .keys()
+            .filter(|key| *key == &base_pool_key || key.starts_with(&session_prefix))
+            .cloned()
+            .collect();
+        let mut removed = Vec::with_capacity(keys_to_remove.len());
+        for key in keys_to_remove {
+            if let Some(pool) = conns.remove(&key) {
+                removed.push(pool);
+            }
+        }
+        drop(conns);
+        let closed = !removed.is_empty();
+        for pool in removed {
+            close_pool_kind(pool).await;
+        }
+        Ok(closed)
+    }
+
     pub async fn duckdb_existing_pool_is_usable_for_config(&self, config: &ConnectionConfig) -> Result<bool, String> {
         if config.db_type != DatabaseType::DuckDb {
             return Ok(false);
@@ -1430,6 +1457,33 @@ mod tests {
 
         let conns = state.connections.read().await;
         assert!(!conns.contains_key("duckdb-conn:session:tab-1"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn close_database_pool_removes_database_and_session_scoped_pools_only() {
+        let (state, dir) = test_app_state().await;
+        let mut config = mysql_config(None);
+        config.id = "conn".to_string();
+        state.configs.write().await.insert(config.id.clone(), config);
+        let pool = crate::db::sqlite::connect_path(":memory:").await.unwrap();
+
+        {
+            let mut conns = state.connections.write().await;
+            conns.insert("conn".to_string(), PoolKind::Sqlite(pool.clone()));
+            conns.insert("conn:analytics".to_string(), PoolKind::Sqlite(pool.clone()));
+            conns.insert("conn:analytics:session:tab-1".to_string(), PoolKind::Sqlite(pool.clone()));
+            conns.insert("conn:billing".to_string(), PoolKind::Sqlite(pool));
+        }
+
+        assert!(state.close_database_pool("conn", Some("analytics")).await.unwrap());
+
+        let conns = state.connections.read().await;
+        assert!(conns.contains_key("conn"));
+        assert!(!conns.contains_key("conn:analytics"));
+        assert!(!conns.contains_key("conn:analytics:session:tab-1"));
+        assert!(conns.contains_key("conn:billing"));
 
         let _ = std::fs::remove_dir_all(dir);
     }
