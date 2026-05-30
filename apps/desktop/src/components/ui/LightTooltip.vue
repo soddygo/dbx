@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 
 const props = withDefaults(
   defineProps<{
@@ -63,6 +63,13 @@ function clearTimer() {
   timer = null;
 }
 
+function isTriggerActive(): boolean {
+  const el = triggerElement();
+  if (!el || !el.isConnected) return false;
+  const active = document.activeElement;
+  return el.matches(":hover") || (active instanceof Node && el.contains(active));
+}
+
 function updatePosition() {
   const el = triggerElement();
   if (!el) return;
@@ -92,16 +99,39 @@ function updatePosition() {
 function close() {
   clearTimer();
   show.value = false;
+  removeGlobalListeners();
+}
+
+function closeIfTriggerInactive() {
+  if (!isTriggerActive()) close();
+}
+
+function addGlobalListeners() {
+  window.addEventListener("scroll", close, true);
+  window.addEventListener("resize", close);
+  window.addEventListener("blur", close);
+  document.addEventListener("visibilitychange", close);
+  document.addEventListener("pointermove", closeIfTriggerInactive, true);
+  document.addEventListener("pointerdown", close, true);
+  document.addEventListener("contextmenu", close, true);
+}
+
+function removeGlobalListeners() {
   window.removeEventListener("scroll", close, true);
   window.removeEventListener("resize", close);
+  window.removeEventListener("blur", close);
+  document.removeEventListener("visibilitychange", close);
+  document.removeEventListener("pointermove", closeIfTriggerInactive, true);
+  document.removeEventListener("pointerdown", close, true);
+  document.removeEventListener("contextmenu", close, true);
 }
 
 function open() {
   if (props.disabled || !props.text) return;
+  if (!isTriggerActive()) return;
   updatePosition();
   show.value = true;
-  window.addEventListener("scroll", close, true);
-  window.addEventListener("resize", close);
+  addGlobalListeners();
 }
 
 function scheduleOpen() {
@@ -111,6 +141,14 @@ function scheduleOpen() {
 }
 
 onBeforeUnmount(close);
+
+watch(
+  () => [props.disabled, props.text] as const,
+  () => {
+    if (props.disabled || !props.text) close();
+    else if (show.value) updatePosition();
+  },
+);
 </script>
 
 <template>
