@@ -5,6 +5,7 @@ import { useQueryStore } from "@/stores/queryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { buildTableSelectSql, quoteTableIdentifier } from "@/lib/tableSelectSql";
 import { editablePrimaryKeys, usesSyntheticRowIdKey } from "@/lib/tableEditing";
+import { tableMetaForDataTab } from "@/lib/tableDataTabMeta";
 import * as api from "@/lib/api";
 import type { QueryTab } from "@/types/database";
 import { useToast } from "@/composables/useToast";
@@ -26,20 +27,23 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
     options: { orderBy?: string; limit?: number; offset?: number; whereInput?: string } = {},
   ): Promise<string> {
     const config = connectionStore.getConfig(tab.connectionId);
-    const primaryKeys = tab.tableMeta ? editablePrimaryKeys(config?.db_type, tab.tableMeta.columns) : [];
+    const tableMeta = tableMetaForDataTab(tab);
+    const primaryKeys = tab.tableMeta
+      ? editablePrimaryKeys(config?.db_type, tab.tableMeta.columns)
+      : (tableMeta?.primaryKeys ?? []);
     if (tab.tableMeta && primaryKeys.join("\0") !== tab.tableMeta.primaryKeys.join("\0")) {
       tab.tableMeta.primaryKeys = primaryKeys;
     }
     const fallbackOrderColumns =
       config?.db_type === "sqlserver" && !primaryKeys.length
-        ? tab.tableMeta?.columns.slice(0, 1).map((column) => column.name)
+        ? tableMeta?.columns.slice(0, 1).map((column) => column.name)
         : undefined;
     const useRowId = usesSyntheticRowIdKey(config?.db_type, primaryKeys);
     return buildTableSelectSql({
       databaseType: config?.db_type,
-      schema: tab.tableMeta?.schema,
-      tableName: tab.tableMeta?.tableName ?? "",
-      columns: tab.tableMeta?.columns.map((column) => column.name),
+      schema: tableMeta?.schema,
+      tableName: tableMeta?.tableName ?? "",
+      columns: tableMeta?.columns.map((column) => column.name),
       primaryKeys,
       fallbackOrderColumns,
       includeRowId: useRowId,
@@ -65,7 +69,7 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
   ) {
     const tab = activeTab.value;
     if (!tab) return;
-    if (tab.mode === "data" && tab.tableMeta) {
+    if (tab.mode === "data" && tableMetaForDataTab(tab)) {
       tab.whereInput = whereInput ?? "";
       const pageLimit = limit ?? settingsStore.editorSettings.pageSize;
       const pageOffset = offset ?? 0;
@@ -116,7 +120,7 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
       return;
     }
 
-    if (!tab.tableMeta) return;
+    if (!tableMetaForDataTab(tab)) return;
     tab.whereInput = whereInput ?? "";
     const sql = await buildTableSql(tab, { limit, offset, whereInput, orderBy });
     queryStore.updateSql(tab.id, sql);
@@ -134,7 +138,7 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
     tab.resultSortDirection = direction ?? undefined;
 
     if (tab.mode === "data") {
-      if (!tab.tableMeta) return;
+      if (!tableMetaForDataTab(tab)) return;
       tab.whereInput = whereInput ?? "";
       const config = connectionStore.getConfig(tab.connectionId);
       const quotedColumn = quoteIdent(tab, column);

@@ -41,6 +41,7 @@ import { useQueryStore } from "@/stores/queryStore";
 import { canCancelQueryExecution, queryExecutionLabelKey } from "@/lib/queryExecutionState";
 import { databaseDisplayNameForTab } from "@/lib/tabPresentation";
 import { isTableDataEditable } from "@/lib/tableEditing";
+import { tableMetaForDataTab } from "@/lib/tableDataTabMeta";
 import type { QueryTab, ConnectionConfig } from "@/types/database";
 import type { SqlFormatDialect } from "@/lib/sqlFormatter";
 
@@ -116,6 +117,8 @@ const columnVisibilityOptions = computed(
 );
 const redisKeyBrowserRef = ref<SearchableBrowserHandle>();
 const objectBrowserRef = ref<SearchableBrowserHandle>();
+const activeTableMeta = computed(() => props.activeTab.tableMeta);
+const activeDataTabTableMeta = computed(() => tableMetaForDataTab(props.activeTab));
 
 const activeSqlFormatDialect = computed<SqlFormatDialect>(() => {
   switch (props.activeConnection?.db_type) {
@@ -766,13 +769,13 @@ defineExpose({ focusSearch, refreshData, handleModRTarget });
           :initial-order-by-input="activeTab.orderByInput"
           :sql="activeTab.sql"
           :loading="activeTab.isExecuting"
-          :editable="isTableDataEditable(activeConnection?.db_type, activeTab.tableMeta?.primaryKeys ?? [])"
+          :editable="isTableDataEditable(activeConnection?.db_type, activeTableMeta?.primaryKeys ?? [])"
           context="table-data"
           :initial-where-input="activeTab.whereInput"
           :database-type="activeConnection?.db_type"
           :connection-id="activeTab.connectionId"
           :database="activeTab.database"
-          :table-meta="activeTab.tableMeta"
+          :table-meta="activeDataTabTableMeta"
           :page-offset="activeTab.resultPageOffset"
           :page-limit="activeTab.resultPageLimit"
           :on-execute-sql="async (sql: string) => emit('executeSql', sql)"
