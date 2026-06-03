@@ -1,5 +1,6 @@
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
+use std::error::Error;
 use std::time::Duration;
 
 use super::with_connection_timeout;
@@ -8,6 +9,7 @@ use crate::db::mongo_driver::MongoDocumentResult;
 pub struct EsClient {
     http: HttpClient,
     base_url: String,
+    fallback_base_urls: Vec<String>,
     auth: Option<(String, String)>,
 }
 
@@ -19,16 +21,30 @@ impl EsClient {
         accept_invalid_certs: bool,
         timeout: Duration,
     ) -> Self {
+        let base_url = url.trim_end_matches('/').to_string();
         let auth = match (username, password) {
             (Some(u), Some(p)) if !u.is_empty() => Some((u.to_string(), p.to_string())),
             _ => None,
         };
-        let http = HttpClient::builder()
-            .connect_timeout(timeout)
-            .danger_accept_invalid_certs(accept_invalid_certs)
-            .build()
-            .unwrap_or_else(|_| HttpClient::new());
-        Self { http, base_url: url.trim_end_matches('/').to_string(), auth }
+        let mut builder =
+            HttpClient::builder().connect_timeout(timeout).danger_accept_invalid_certs(accept_invalid_certs);
+        if elasticsearch_should_bypass_system_proxy(&base_url) {
+            builder = builder.no_proxy();
+        }
+        let http = builder.build().unwrap_or_else(|_| HttpClient::new());
+        let fallback_base_urls = elasticsearch_base_url_fallbacks(&base_url);
+        Self { http, base_url, fallback_base_urls, auth }
+    }
+
+    pub fn from_config(
+        url: &str,
+        username: Option<&str>,
+        password: Option<&str>,
+        tls_enabled: bool,
+        url_params: Option<&str>,
+        timeout: Duration,
+    ) -> Self {
+        Self::new(url, username, password, elasticsearch_accept_invalid_certs(tls_enabled, url_params), timeout)
     }
 
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
@@ -62,20 +78,127 @@ impl EsClient {
 
 impl Clone for EsClient {
     fn clone(&self) -> Self {
-        Self { http: self.http.clone(), base_url: self.base_url.clone(), auth: self.auth.clone() }
+        Self {
+            http: self.http.clone(),
+            base_url: self.base_url.clone(),
+            fallback_base_urls: self.fallback_base_urls.clone(),
+            auth: self.auth.clone(),
+        }
     }
 }
 
-pub async fn test_connection(client: &EsClient, timeout: Duration) -> Result<(), String> {
-    let resp = with_connection_timeout("Elasticsearch", timeout, async {
-        client.get("/").send().await.map_err(|e| format!("Elasticsearch connection failed: {e}"))
-    })
-    .await?;
-    if !resp.status().is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Elasticsearch error: {body}"));
+pub async fn test_connection(client: &mut EsClient, timeout: Duration) -> Result<(), String> {
+    let mut errors = Vec::new();
+    let urls = std::iter::once(client.base_url.clone()).chain(client.fallback_base_urls.clone());
+
+    for base_url in urls {
+        client.base_url = base_url.clone();
+        let resp = with_connection_timeout("Elasticsearch", timeout, async {
+            client.get("/").send().await.map_err(|e| {
+                format!(
+                    "Elasticsearch connection failed for {}: {}",
+                    redact_elasticsearch_url(&base_url),
+                    format_reqwest_error(&e)
+                )
+            })
+        })
+        .await;
+
+        let resp = match resp {
+            Ok(resp) => resp,
+            Err(err) => {
+                errors.push(err);
+                continue;
+            }
+        };
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Elasticsearch error ({status}): {body}"));
+        }
+        return Ok(());
     }
-    Ok(())
+
+    if errors.is_empty() {
+        Err("Elasticsearch connection failed: no URL candidates".to_string())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+pub fn elasticsearch_accept_invalid_certs(tls_enabled: bool, url_params: Option<&str>) -> bool {
+    tls_enabled
+        || elasticsearch_url_params_flag(url_params, "sslmode", &["disable", "allow"])
+        || elasticsearch_url_params_flag(url_params, "tlsverify", &["false", "0", "no", "off"])
+        || elasticsearch_url_params_flag(url_params, "verify", &["false", "0", "no", "off"])
+        || elasticsearch_url_params_flag(url_params, "insecure", &["true", "1", "yes", "on"])
+        || elasticsearch_url_params_flag(url_params, "accept_invalid_certs", &["true", "1", "yes", "on"])
+}
+
+fn elasticsearch_url_params_flag(params: Option<&str>, key: &str, expected_values: &[&str]) -> bool {
+    params.unwrap_or("").trim().trim_start_matches('?').split('&').filter_map(|pair| pair.split_once('=')).any(
+        |(k, v)| {
+            k.trim().eq_ignore_ascii_case(key)
+                && expected_values.iter().any(|expected| v.trim().eq_ignore_ascii_case(expected))
+        },
+    )
+}
+
+fn elasticsearch_base_url_fallbacks(base_url: &str) -> Vec<String> {
+    let Ok(parsed) = reqwest::Url::parse(base_url) else {
+        return Vec::new();
+    };
+    let Some(host) = parsed.host_str() else {
+        return Vec::new();
+    };
+    if !host.eq_ignore_ascii_case("localhost") {
+        return Vec::new();
+    }
+
+    let mut fallback = parsed;
+    if fallback.set_host(Some("127.0.0.1")).is_ok() {
+        vec![fallback.as_str().trim_end_matches('/').to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+fn elasticsearch_should_bypass_system_proxy(base_url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(base_url) else {
+        return false;
+    };
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    let host = host.trim_matches(['[', ']']);
+    host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
+fn redact_elasticsearch_url(url: &str) -> String {
+    let Ok(mut parsed) = reqwest::Url::parse(url) else {
+        return url.to_string();
+    };
+    if !parsed.username().is_empty() {
+        let _ = parsed.set_username("user");
+    }
+    if parsed.password().is_some() {
+        let _ = parsed.set_password(Some("password"));
+    }
+    parsed.as_str().trim_end_matches('/').to_string()
+}
+
+fn format_reqwest_error(err: &reqwest::Error) -> String {
+    let mut parts = vec![err.to_string()];
+    let mut source = err.source();
+    while let Some(err) = source {
+        let text = err.to_string();
+        if !text.is_empty() && !parts.iter().any(|part| part == &text) {
+            parts.push(text);
+        }
+        source = err.source();
+    }
+    parts.join(": ")
 }
 
 #[derive(Deserialize)]
@@ -415,4 +538,68 @@ fn parse_aggregations(aggs: &serde_json::Map<String, serde_json::Value>) -> (Vec
     }
 
     (Vec::new(), Vec::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        elasticsearch_accept_invalid_certs, elasticsearch_base_url_fallbacks, elasticsearch_should_bypass_system_proxy,
+        redact_elasticsearch_url, EsClient,
+    };
+    use std::time::Duration;
+
+    #[test]
+    fn url_params_can_disable_elasticsearch_tls_verification() {
+        assert!(elasticsearch_accept_invalid_certs(false, Some("sslmode=disable")));
+        assert!(elasticsearch_accept_invalid_certs(false, Some("?tlsVerify=false")));
+        assert!(elasticsearch_accept_invalid_certs(false, Some("verify=0")));
+        assert!(elasticsearch_accept_invalid_certs(false, Some("insecure=true")));
+        assert!(elasticsearch_accept_invalid_certs(false, Some("accept_invalid_certs=on")));
+        assert!(!elasticsearch_accept_invalid_certs(false, Some("sslmode=require&verify=true")));
+    }
+
+    #[test]
+    fn tls_checkbox_keeps_legacy_insecure_elasticsearch_behavior() {
+        assert!(elasticsearch_accept_invalid_certs(true, None));
+    }
+
+    #[test]
+    fn localhost_elasticsearch_url_falls_back_to_ipv4_loopback() {
+        assert_eq!(
+            elasticsearch_base_url_fallbacks("https://localhost:9200"),
+            vec!["https://127.0.0.1:9200".to_string()]
+        );
+        assert_eq!(elasticsearch_base_url_fallbacks("https://search.example.com:9200"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn elasticsearch_client_from_config_uses_url_params_for_tls_verification() {
+        let client = EsClient::from_config(
+            "https://localhost:9200/",
+            Some("elastic"),
+            Some("secret"),
+            false,
+            Some("sslmode=disable"),
+            Duration::from_secs(1),
+        );
+
+        assert_eq!(client.base_url, "https://localhost:9200");
+        assert_eq!(client.fallback_base_urls, vec!["https://127.0.0.1:9200"]);
+    }
+
+    #[test]
+    fn redacts_elasticsearch_url_credentials_in_errors() {
+        assert_eq!(
+            redact_elasticsearch_url("https://elastic:secret@localhost:9200"),
+            "https://user:password@localhost:9200"
+        );
+    }
+
+    #[test]
+    fn elasticsearch_only_bypasses_system_proxy_for_loopback_hosts() {
+        assert!(elasticsearch_should_bypass_system_proxy("https://localhost:9200"));
+        assert!(elasticsearch_should_bypass_system_proxy("https://127.0.0.1:9200"));
+        assert!(elasticsearch_should_bypass_system_proxy("https://[::1]:9200"));
+        assert!(!elasticsearch_should_bypass_system_proxy("https://search.example.com:9200"));
+    }
 }

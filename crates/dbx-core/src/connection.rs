@@ -370,15 +370,15 @@ impl AppState {
                 PoolKind::SqlServer(Arc::new(tokio::sync::Mutex::new(client)))
             }
             DatabaseType::Elasticsearch => {
-                let accept_invalid_certs = db_config.ssl;
-                let client = db::elasticsearch_driver::EsClient::new(
+                let mut client = db::elasticsearch_driver::EsClient::from_config(
                     &url,
                     Some(&db_config.username),
                     Some(&db_config.password),
-                    accept_invalid_certs,
+                    db_config.ssl,
+                    db_config.url_params.as_deref(),
                     connect_timeout,
                 );
-                db::elasticsearch_driver::test_connection(&client, connect_timeout).await?;
+                db::elasticsearch_driver::test_connection(&mut client, connect_timeout).await?;
                 PoolKind::Elasticsearch(client)
             }
             DatabaseType::Dameng

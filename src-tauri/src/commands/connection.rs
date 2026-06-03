@@ -382,14 +382,15 @@ pub async fn test_connection(state: State<'_, Arc<AppState>>, config: Connection
             .await
             .map(|_| "Connection successful".to_string()),
             DatabaseType::Elasticsearch => {
-                let client = db::elasticsearch_driver::EsClient::new(
+                let mut client = db::elasticsearch_driver::EsClient::from_config(
                     &url,
                     Some(&config.username),
                     Some(&config.password),
                     config.ssl,
+                    config.url_params.as_deref(),
                     connect_timeout,
                 );
-                db::elasticsearch_driver::test_connection(&client, connect_timeout)
+                db::elasticsearch_driver::test_connection(&mut client, connect_timeout)
                     .await
                     .map(|_| "Connection successful".to_string())
             }
@@ -535,14 +536,15 @@ pub async fn connect_db(state: State<'_, Arc<AppState>>, config: ConnectionConfi
             PoolKind::SqlServer(std::sync::Arc::new(tokio::sync::Mutex::new(client)))
         }
         DatabaseType::Elasticsearch => {
-            let client = db::elasticsearch_driver::EsClient::new(
+            let mut client = db::elasticsearch_driver::EsClient::from_config(
                 &url,
                 Some(&db_config.username),
                 Some(&db_config.password),
                 db_config.ssl,
+                db_config.url_params.as_deref(),
                 connect_timeout,
             );
-            db::elasticsearch_driver::test_connection(&client, connect_timeout).await?;
+            db::elasticsearch_driver::test_connection(&mut client, connect_timeout).await?;
             PoolKind::Elasticsearch(client)
         }
         db_type if database_capabilities::is_agent_type(&db_type) => {
