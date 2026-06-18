@@ -4024,12 +4024,6 @@ const canvasEditingCell = computed(() => {
   return { rowIndex, visibleColIdx, actualColIdx: editing.col, rect };
 });
 
-const canvasSingleSelectedCell = computed(() => {
-  const range = selectedRange.value;
-  if (!range || range.startRow !== range.endRow || range.startCol !== range.endCol) return null;
-  return { rowIndex: range.startRow, visibleColIdx: range.startCol };
-});
-
 function canvasEffectiveViewportWidth(): number {
   return canvasViewportWidth.value || canvasScrollerElement()?.clientWidth || 0;
 }
@@ -6335,7 +6329,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                     <div v-if="whereSuggestions.length > 0" class="fixed z-50 min-w-[180px] rounded-md border bg-popover text-popover-foreground shadow-md" :style="whereSuggestionStyle">
                       <div
                         v-for="(sug, idx) in whereSuggestions"
-                         :key="`${sug.kind}:${sug.value}`"
+                        :key="`${sug.kind}:${sug.value}`"
                         class="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer"
                         :class="idx === whereSuggestionIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-gray-200 dark:hover:bg-gray-800'"
                         @mousedown.prevent="

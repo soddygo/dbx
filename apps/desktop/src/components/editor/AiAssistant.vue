@@ -858,7 +858,11 @@ const markedInstance = new Marked({
 });
 
 function formatInlineText(text: string): string {
-  return markedInstance.parse(text) as string;
+  try {
+    return markedInstance.parse(text) as string;
+  } catch {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
 }
 
 const messageRenderer = computed(() => {
