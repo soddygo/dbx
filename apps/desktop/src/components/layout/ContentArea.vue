@@ -73,7 +73,7 @@ import type { DataGridSortMode } from "@/lib/dataGrid/dataGridSort";
 import { useTabScroll } from "@/composables/useTabScroll";
 import { formatElapsedSeconds } from "@/lib/common/elapsedTime";
 import type { CustomSaveHandler } from "@/composables/useDataGridEditor";
-import type { QueryTab, ConnectionConfig, TableInfoTab, TreeNode, VectorCollectionMeta } from "@/types/database";
+import type { QueryTab, ConnectionConfig, TableInfoTab, TreeNode, VectorCollectionMeta, ObjectBrowserViewport } from "@/types/database";
 import { sqlFormatDialectForDbType, type SqlFormatDialect } from "@/lib/sql/sqlFormatter";
 
 type DataGridHandle = {
@@ -144,6 +144,7 @@ const emit = defineEmits<{
   editTableStructure: [tableName: string];
   openObjectTable: [target: { tableName: string; schema?: string; tableType?: string }];
   objectSchemaChange: [schema: string | undefined];
+  objectBrowserViewportChange: [tabId: string, viewport: ObjectBrowserViewport];
   structureEditorSaved: [commentChanged: boolean];
   structureEditorClose: [];
   openSettings: [initialTab?: string, initialSection?: string];
@@ -1496,8 +1497,10 @@ defineExpose({ focusSearch, refreshData, handleModRTarget, requestQueryEditorExe
           :connection="activeConnection"
           :database="activeTab.database"
           :schema="activeTab.objectBrowser?.schema"
+          :viewport="activeTab.objectBrowser?.viewport"
           @open-table="emit('openObjectTable', $event)"
           @schema-change="emit('objectSchemaChange', $event)"
+          @viewport-change="emit('objectBrowserViewportChange', activeTab.id, $event)"
         />
       </div>
     </template>

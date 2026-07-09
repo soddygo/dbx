@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { uuid } from "@/lib/common/utils";
 import { markRaw, ref, watch, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import type { DatabaseType, QueryResult, QueryTab, TableInfoTab, TableStructureEditorTarget } from "@/types/database";
+import type { DatabaseType, ObjectBrowserViewport, QueryResult, QueryTab, TableInfoTab, TableStructureEditorTarget } from "@/types/database";
 import { orderPinnedFirst } from "@/lib/app/pinnedItems";
 import { canCancelQueryExecution } from "@/lib/sql/queryExecutionState";
 import { buildExplainSql, parseExplainResult, parseDamengExplainText } from "@/lib/diagram/explainPlan";
@@ -1576,6 +1576,14 @@ export const useQueryStore = defineStore("query", () => {
     queueSavedSqlEditorPositionPersist(tab);
   }
 
+  function updateObjectBrowserViewport(id: string, viewport: ObjectBrowserViewport) {
+    const tab = tabs.value.find((t) => t.id === id);
+    if (!tab || tab.mode !== "objects") return;
+    const previous = tab.objectBrowser?.viewport;
+    if (previous?.scrollTop === viewport.scrollTop && previous.viewMode === viewport.viewMode) return;
+    tab.objectBrowser = { ...tab.objectBrowser, viewport };
+  }
+
   function renameTab(id: string, title: string) {
     const trimmed = title.trim();
     if (!trimmed) return false;
@@ -1718,7 +1726,7 @@ export const useQueryStore = defineStore("query", () => {
     if (!tab || tab.schema === schema) return;
     rollbackTabTransaction(tab);
     tab.schema = schema;
-    if (tab.mode === "objects") tab.objectBrowser = { ...tab.objectBrowser, schema };
+    if (tab.mode === "objects") tab.objectBrowser = { ...tab.objectBrowser, schema, viewport: undefined };
   }
 
   function updateConnection(id: string, connectionId: string, database = "") {
@@ -3281,6 +3289,7 @@ export const useQueryStore = defineStore("query", () => {
     updateSql,
     updateEditorViewport,
     updateEditorSelection,
+    updateObjectBrowserViewport,
     setAutoCommit,
     commitTransaction,
     rollbackTransaction,
