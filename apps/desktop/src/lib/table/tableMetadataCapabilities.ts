@@ -73,11 +73,13 @@ export function getTableMetadataCapabilities(dbType?: DatabaseType): TableMetada
 }
 
 export function firstStructureMetadataTab(capabilities: TableMetadataCapabilities, isCreateMode: boolean): TableInfoTab {
-  if (!isCreateMode && capabilities.ddl) return "ddl";
+  // Structure editing should open on an editable metadata page; DDL remains a
+  // read-only fallback for databases that do not expose editable metadata.
   if (capabilities.columns) return "columns";
   if (capabilities.indexes) return "indexes";
   if (capabilities.foreignKeys) return "foreignKeys";
   if (capabilities.triggers) return "triggers";
+  if (!isCreateMode && capabilities.ddl) return "ddl";
   return "columns";
 }
 

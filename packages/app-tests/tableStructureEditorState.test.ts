@@ -458,9 +458,10 @@ test("allows Manticore Search column properties only before the column exists", 
 
 const fullCapabilities = { columns: true, indexes: true, foreignKeys: true, triggers: true, ddl: true };
 const noDdlCapabilities = { columns: true, indexes: true, foreignKeys: true, triggers: true, ddl: false };
+const ddlOnlyCapabilities = { columns: false, indexes: false, foreignKeys: false, triggers: false, ddl: true };
 
-test("defaults to DDL tab for edit mode with full capabilities", () => {
-  assert.equal(firstStructureMetadataTab(fullCapabilities, false), "ddl");
+test("defaults to columns tab for edit mode with full capabilities", () => {
+  assert.equal(firstStructureMetadataTab(fullCapabilities, false), "columns");
 });
 
 test("defaults to columns tab for create mode", () => {
@@ -469,6 +470,10 @@ test("defaults to columns tab for create mode", () => {
 
 test("falls back to columns tab when DDL is not available in edit mode", () => {
   assert.equal(firstStructureMetadataTab(noDdlCapabilities, false), "columns");
+});
+
+test("falls back to DDL when no editable metadata tab is available", () => {
+  assert.equal(firstStructureMetadataTab(ddlOnlyCapabilities, false), "ddl");
 });
 
 test("preserves a restored structure draft tab without an explicit initial tab", () => {

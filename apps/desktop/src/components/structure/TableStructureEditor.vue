@@ -109,7 +109,7 @@ const emit = defineEmits<{
   openSettings: [initialTab?: string, initialSection?: string];
 }>();
 
-const activeTab = ref<TableInfoTab>("ddl");
+const activeTab = ref<TableInfoTab>("columns");
 const loading = ref(false);
 const saving = ref(false);
 const postSaveRefreshing = ref(false);
