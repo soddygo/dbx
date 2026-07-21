@@ -812,13 +812,13 @@ pub fn build_database_sql_export(options: BuildDatabaseSqlExportOptions) -> Resu
 
     for table in options.tables {
         if let Some(ddl) = table.ddl.as_ref().map(|ddl| ddl.trim()).filter(|ddl| !ddl.is_empty()) {
-            let ddl = normalize_export_table_ddl(
+            let ddl = format_export_table_ddl(
                 ddl,
                 table.database_type,
                 DdlNormalizeOptions { omit_auto_increment: options.omit_auto_increment },
             );
             lines.push(format!("-- Structure for {}", table.display_name));
-            lines.push(format_export_table_ddl(ddl, table.database_type));
+            lines.push(ddl);
             lines.push(String::new());
         }
 
@@ -878,8 +878,8 @@ fn normalize_export_table_ddl(
     crate::mysql_ddl_normalize::normalize_mysql_export_ddl(ddl, opts)
 }
 
-fn format_export_table_ddl(ddl: &str, database_type: Option<DatabaseType>) -> String {
-    let ddl = normalize_export_table_ddl(ddl, database_type);
+fn format_export_table_ddl(ddl: &str, database_type: Option<DatabaseType>, opts: DdlNormalizeOptions) -> String {
+    let ddl = normalize_export_table_ddl(ddl, database_type, opts);
     let ddl = ddl.trim().trim_end_matches(';').trim_end();
     format!("{ddl};")
 }
@@ -1574,7 +1574,7 @@ pub async fn export_database_sql_core(
             };
             match ddl_result {
                 Ok(ddl) => {
-                    let ddl = normalize_export_table_ddl(
+                    let ddl = format_export_table_ddl(
                         &ddl,
                         Some(db_type),
                         DdlNormalizeOptions { omit_auto_increment: request.omit_auto_increment },
@@ -2719,9 +2719,16 @@ mod tests {
     fn table_ddl_export_has_one_statement_terminator() {
         let ddl = "CREATE TABLE `users` (`id` int);;\n";
 
-        assert_eq!(format_export_table_ddl(ddl, Some(DatabaseType::Mysql)), "CREATE TABLE `users` (`id` int);");
         assert_eq!(
-            format_export_table_ddl("CREATE TABLE users (id int)", Some(DatabaseType::Postgres)),
+            format_export_table_ddl(ddl, Some(DatabaseType::Mysql), DdlNormalizeOptions::default()),
+            "CREATE TABLE `users` (`id` int);"
+        );
+        assert_eq!(
+            format_export_table_ddl(
+                "CREATE TABLE users (id int)",
+                Some(DatabaseType::Postgres),
+                DdlNormalizeOptions::default(),
+            ),
             "CREATE TABLE users (id int);"
         );
     }
