@@ -303,11 +303,30 @@ fn quote_export_sql_string(text: &str) -> String {
 }
 
 fn quote_export_sql_string_for_database(text: &str, database_type: Option<DatabaseType>) -> String {
-    if is_mysql_compatible_export_literal_target(database_type) {
-        quote_mysql_compatible_export_sql_string(text)
-    } else {
-        quote_export_sql_string(text)
+    match database_type {
+        Some(DatabaseType::Dameng) => quote_dameng_export_sql_string(text),
+        database_type if is_mysql_compatible_export_literal_target(database_type) => {
+            quote_mysql_compatible_export_sql_string(text)
+        }
+        _ => quote_export_sql_string(text),
     }
+}
+
+fn quote_dameng_export_sql_string(text: &str) -> String {
+    if !text.contains('\0') {
+        return quote_export_sql_string(text);
+    }
+
+    let mut parts = Vec::new();
+    for (index, segment) in text.split('\0').enumerate() {
+        if index > 0 {
+            parts.push("CHR(0)".to_string());
+        }
+        if !segment.is_empty() {
+            parts.push(quote_export_sql_string(segment));
+        }
+    }
+    parts.join(" || ")
 }
 
 fn quote_mysql_compatible_export_sql_string(text: &str) -> String {
@@ -799,7 +818,7 @@ pub fn build_database_sql_export(options: BuildDatabaseSqlExportOptions) -> Resu
                 DdlNormalizeOptions { omit_auto_increment: options.omit_auto_increment },
             );
             lines.push(format!("-- Structure for {}", table.display_name));
-            lines.push(format!("{};", ddl.trim_end_matches(';')));
+            lines.push(format_export_table_ddl(ddl, table.database_type));
             lines.push(String::new());
         }
 
@@ -857,6 +876,12 @@ fn normalize_export_table_ddl(
     }
 
     crate::mysql_ddl_normalize::normalize_mysql_export_ddl(ddl, opts)
+}
+
+fn format_export_table_ddl(ddl: &str, database_type: Option<DatabaseType>) -> String {
+    let ddl = normalize_export_table_ddl(ddl, database_type);
+    let ddl = ddl.trim().trim_end_matches(';').trim_end();
+    format!("{ddl};")
 }
 
 fn postgres_sequence_qualified_name(schema: &str, sequence_name: &str) -> String {
@@ -1554,7 +1579,7 @@ pub async fn export_database_sql_core(
                         Some(db_type),
                         DdlNormalizeOptions { omit_auto_increment: request.omit_auto_increment },
                     );
-                    writeln!(file, "{};\n", ddl).map_err(|e| format!("Failed to write file: {e}"))?;
+                    writeln!(file, "{ddl}\n").map_err(|e| format!("Failed to write file: {e}"))?;
                 }
                 Err(e) => {
                     record_export_error(
@@ -1971,7 +1996,7 @@ mod tests {
     use super::concurrent_metadata_prefetch_allowed;
     use super::{
         build_database_export_object_source_sql, build_database_sql_export, build_export_insert_statements,
-        drop_table_if_exists_sql, filter_export_table_infos, format_export_sql_literal,
+        drop_table_if_exists_sql, filter_export_table_infos, format_export_sql_literal, format_export_table_ddl,
         generate_postgres_extension_ddl, generate_postgres_sequence_create_ddl, generate_postgres_sequence_owner_ddl,
         generate_postgres_sequence_setval_sql, is_postgres_extension_member_routine, normalize_export_table_ddl,
         record_export_error, BuildDatabaseSqlExportOptions, BuildExportInsertStatementsOptions, DdlNormalizeOptions,
@@ -2454,6 +2479,47 @@ mod tests {
     }
 
     #[test]
+    fn dameng_strings_export_nul_as_chr_expression() {
+        let statements = build_export_insert_statements(BuildExportInsertStatementsOptions {
+            database_type: Some(DatabaseType::Dameng),
+            schema: Some("DBX_TEST".to_string()),
+            table_name: Some("NUL_VALUES".to_string()),
+            qualified_table_name: None,
+            columns: vec![
+                "PLAIN".to_string(),
+                "TRAILING".to_string(),
+                "LEADING".to_string(),
+                "MIDDLE".to_string(),
+                "CONSECUTIVE".to_string(),
+                "ONLY_NUL".to_string(),
+            ],
+            column_types: vec![Some("VARCHAR".to_string()); 6],
+            column_extras: Vec::new(),
+            rows: vec![vec![
+                json!("plain"),
+                json!("eHall\0"),
+                json!("\0leading"),
+                json!("left\0right"),
+                json!("left\0\0right"),
+                json!("\0"),
+            ]],
+            batch_size: Some(10),
+        })
+        .unwrap();
+
+        assert_eq!(
+            statements,
+            vec![concat!(
+                "INSERT INTO \"DBX_TEST\".\"NUL_VALUES\" ",
+                "(\"PLAIN\", \"TRAILING\", \"LEADING\", \"MIDDLE\", \"CONSECUTIVE\", \"ONLY_NUL\") ",
+                "VALUES ('plain', 'eHall' || CHR(0), CHR(0) || 'leading', 'left' || CHR(0) || 'right', ",
+                "'left' || CHR(0) || CHR(0) || 'right', CHR(0));"
+            )]
+        );
+        assert!(!statements[0].contains('\0'));
+    }
+
+    #[test]
     fn mysql_export_uses_typed_literals_for_numeric_and_blob_columns() {
         let statements = build_export_insert_statements(BuildExportInsertStatementsOptions {
             database_type: Some(DatabaseType::Mysql),
@@ -2646,6 +2712,17 @@ mod tests {
                 String::new(),
             ]
             .join("\n")
+        );
+    }
+
+    #[test]
+    fn table_ddl_export_has_one_statement_terminator() {
+        let ddl = "CREATE TABLE `users` (`id` int);;\n";
+
+        assert_eq!(format_export_table_ddl(ddl, Some(DatabaseType::Mysql)), "CREATE TABLE `users` (`id` int);");
+        assert_eq!(
+            format_export_table_ddl("CREATE TABLE users (id int)", Some(DatabaseType::Postgres)),
+            "CREATE TABLE users (id int);"
         );
     }
 
