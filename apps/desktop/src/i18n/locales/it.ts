@@ -3927,6 +3927,7 @@ export default withEnglishFallback({
     options: "Opzioni",
     includeStructure: "Struttura tabella (DDL)",
     dropTableIfExists: "Aggiungi DROP TABLE IF EXISTS prima del DDL",
+    omitAutoIncrement: "Ometti AUTO_INCREMENT (per script di installazione pulita)",
     includeData: "Dati tabella (INSERT)",
     includeObjects: "Viste / Procedure / Funzioni / Sequenze",
     databaseSelection: "Database",

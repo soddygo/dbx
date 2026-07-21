@@ -2326,6 +2326,7 @@ export interface DatabaseExportRequest {
   includeData: boolean;
   includeObjects: boolean;
   dropTableIfExists?: boolean;
+  omitAutoIncrement?: boolean;
   failOnError?: boolean;
   snapshotSessionId?: string;
   batchSize: number;
