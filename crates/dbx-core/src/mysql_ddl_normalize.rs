@@ -70,11 +70,8 @@ pub(crate) fn normalize_mysql_export_ddl(ddl: &str, opts: DdlNormalizeOptions) -
     for opt in &options {
         let Range { start, end } = opt.span;
         if opts.omit_auto_increment && opt.key == AUTO_INCREMENT {
-            // Also drop one preceding separator whitespace char (if present) so we
-            // don't leave a double space / dangling newline behind. The byte
-            // before an ASCII option key is always ASCII whitespace here, so this
-            // is safe (never splits a multibyte char).
-            let start = if start > 0 && bytes[start - 1].is_ascii_whitespace() { start - 1 } else { start };
+            // Preserve line endings because they may terminate a preceding line comment.
+            let start = if start > 0 && matches!(bytes[start - 1], b' ' | b'\t') { start - 1 } else { start };
             edits.push((start..end, ""));
         } else if opt.key == ROW_FORMAT {
             if let Some(value) = opt.value.as_deref() {
@@ -309,7 +306,7 @@ mod tests {
     fn line_comment_between_options() {
         let ddl = "CREATE TABLE `t` (`id` int) ENGINE=InnoDB -- remember to bump\nAUTO_INCREMENT=5";
         let out = normalize_mysql_export_ddl(ddl, opts(true));
-        assert_eq!(out, "CREATE TABLE `t` (`id` int) ENGINE=InnoDB -- remember to bump");
+        assert_eq!(out, "CREATE TABLE `t` (`id` int) ENGINE=InnoDB -- remember to bump\n");
     }
 
     #[test]

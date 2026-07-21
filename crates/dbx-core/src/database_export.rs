@@ -2734,6 +2734,43 @@ mod tests {
     }
 
     #[test]
+    fn omitted_auto_increment_preserves_mysql_line_comment_boundaries() {
+        let options = DdlNormalizeOptions { omit_auto_increment: true };
+
+        assert_eq!(
+            format_export_table_ddl(
+                "CREATE TABLE `users` (`id` int) ENGINE=InnoDB -- keep this comment\nAUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4",
+                Some(DatabaseType::Mysql),
+                options,
+            ),
+            "CREATE TABLE `users` (`id` int) ENGINE=InnoDB -- keep this comment\n DEFAULT CHARSET=utf8mb4;"
+        );
+        assert_eq!(
+            format_export_table_ddl(
+                "CREATE TABLE `users` (`id` int) ENGINE=InnoDB # keep this comment\r\nAUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4",
+                Some(DatabaseType::Mysql),
+                options,
+            ),
+            "CREATE TABLE `users` (`id` int) ENGINE=InnoDB # keep this comment\r\n DEFAULT CHARSET=utf8mb4;"
+        );
+    }
+
+    #[test]
+    fn omitted_auto_increment_consumes_only_horizontal_separator_whitespace() {
+        let options = DdlNormalizeOptions { omit_auto_increment: true };
+
+        for separator in [" ", "\t"] {
+            let ddl = format!(
+                "CREATE TABLE `users` (`id` int) ENGINE=InnoDB{separator}AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4"
+            );
+            assert_eq!(
+                format_export_table_ddl(&ddl, Some(DatabaseType::Mysql), options),
+                "CREATE TABLE `users` (`id` int) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+            );
+        }
+    }
+
+    #[test]
     fn normalizes_legacy_mysql_row_format_for_export_compatibility() {
         let ddl = "CREATE TABLE `wide_table` (\n  `payload` varchar(4096) DEFAULT NULL\n) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=COMPACT";
 
