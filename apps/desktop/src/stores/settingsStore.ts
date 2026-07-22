@@ -377,6 +377,8 @@ export interface CustomTheme {
 
 export const DEFAULT_CUSTOM_THEMES: CustomTheme[] = [{ id: "default", name: "Custom", colors: { ...DEFAULT_CUSTOM_THEME_COLORS }, ddlColors: { ...DEFAULT_CUSTOM_THEME_DDL_COLORS } }];
 
+export type SidebarObjectInfoMode = "comment-inline" | "comment-aligned" | "size" | "hidden";
+
 export interface EditorSettings {
   fontFamily: string;
   fontSize: number;
@@ -441,7 +443,7 @@ export interface EditorSettings {
   prefillNewQueryWithSelect: boolean;
   updateNotificationsEnabled: boolean;
   sidebarHiddenTablePrefixes: string[];
-  sidebarHideTableComments: boolean;
+  sidebarObjectInfoMode: SidebarObjectInfoMode;
   sidebarAllowHorizontalScroll: boolean;
   columnFormatters: Record<string, ColumnFormatterConfig>;
   customColumnFormatters: Record<string, CustomColumnFormatterConfig>;
@@ -604,7 +606,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   prefillNewQueryWithSelect: true,
   updateNotificationsEnabled: true,
   sidebarHiddenTablePrefixes: [],
-  sidebarHideTableComments: false,
+  sidebarObjectInfoMode: "comment-aligned",
   sidebarAllowHorizontalScroll: false,
   columnFormatters: {},
   customColumnFormatters: {},
@@ -714,6 +716,14 @@ function normalizeOpenTabsRestoreMode(value: unknown, legacyRestoreOpenTabsOnLau
 
 function normalizeConnectionListSortMode(value: unknown): ConnectionListSortMode {
   return value === "asc" || value === "desc" ? value : "manual";
+}
+
+function normalizeSidebarObjectInfoMode(value: unknown, legacyCommentLayout?: unknown, legacyHideTableComments?: unknown, legacyShowDatabaseSizes?: unknown): SidebarObjectInfoMode {
+  if (value === "comment-inline" || value === "comment-aligned" || value === "size" || value === "hidden") return value;
+  if (legacyCommentLayout === "hidden" || legacyHideTableComments === true) return "hidden";
+  if (legacyShowDatabaseSizes === true) return "size";
+  if (legacyCommentLayout === "aligned") return "comment-aligned";
+  return DEFAULT_EDITOR_SETTINGS.sidebarObjectInfoMode;
 }
 
 function normalizeColumnFormatters(value: unknown): Record<string, ColumnFormatterConfig> {
@@ -868,7 +878,12 @@ export function normalizeEditorSettings(settings: Partial<EditorSettings>, exist
     prefillNewQueryWithSelect: typeof settings.prefillNewQueryWithSelect === "boolean" ? settings.prefillNewQueryWithSelect : DEFAULT_EDITOR_SETTINGS.prefillNewQueryWithSelect,
     updateNotificationsEnabled: settings.updateNotificationsEnabled ?? DEFAULT_EDITOR_SETTINGS.updateNotificationsEnabled,
     sidebarHiddenTablePrefixes: normalizeSidebarHiddenTablePrefixes(settings.sidebarHiddenTablePrefixes),
-    sidebarHideTableComments: settings.sidebarHideTableComments ?? DEFAULT_EDITOR_SETTINGS.sidebarHideTableComments,
+    sidebarObjectInfoMode: normalizeSidebarObjectInfoMode(
+      settings.sidebarObjectInfoMode,
+      (settings as Partial<EditorSettings> & { sidebarTableCommentLayout?: string }).sidebarTableCommentLayout,
+      (settings as Partial<EditorSettings> & { sidebarHideTableComments?: boolean }).sidebarHideTableComments,
+      (settings as Partial<EditorSettings> & { sidebarShowDatabaseSizes?: boolean }).sidebarShowDatabaseSizes,
+    ),
     sidebarAllowHorizontalScroll: settings.sidebarAllowHorizontalScroll ?? DEFAULT_EDITOR_SETTINGS.sidebarAllowHorizontalScroll,
     columnFormatters: normalizeColumnFormatters(settings.columnFormatters),
     customColumnFormatters: normalizeCustomColumnFormatters(settings.customColumnFormatters),
@@ -916,8 +931,12 @@ function clearLegacyEditorSettings() {
   safeLocalStorageRemove(EXPORT_BATCH_SIZE_DEFAULT_MIGRATION_KEY);
 }
 
+function editorSettingsSnapshot(settings: EditorSettings): EditorSettings {
+  return JSON.parse(JSON.stringify(settings)) as EditorSettings;
+}
+
 function saveEditorSettings(settings: EditorSettings) {
-  void api.saveEditorSettings(settings).catch(() => {});
+  void api.saveEditorSettings(editorSettingsSnapshot(settings)).catch(() => {});
 }
 
 export interface SettingsNavigationRequest {
@@ -1230,7 +1249,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (partial.prefillNewQueryWithSelect !== undefined) editorSettings.value.prefillNewQueryWithSelect = partial.prefillNewQueryWithSelect;
     if (partial.updateNotificationsEnabled !== undefined) editorSettings.value.updateNotificationsEnabled = partial.updateNotificationsEnabled;
     if (partial.sidebarHiddenTablePrefixes !== undefined) editorSettings.value.sidebarHiddenTablePrefixes = normalizeSidebarHiddenTablePrefixes(partial.sidebarHiddenTablePrefixes);
-    if (partial.sidebarHideTableComments !== undefined) editorSettings.value.sidebarHideTableComments = partial.sidebarHideTableComments;
+    if (partial.sidebarObjectInfoMode !== undefined) editorSettings.value.sidebarObjectInfoMode = normalizeSidebarObjectInfoMode(partial.sidebarObjectInfoMode);
     if (partial.sidebarAllowHorizontalScroll !== undefined) editorSettings.value.sidebarAllowHorizontalScroll = partial.sidebarAllowHorizontalScroll;
     if (partial.columnFormatters !== undefined) editorSettings.value.columnFormatters = partial.columnFormatters;
     if (partial.customColumnFormatters !== undefined) editorSettings.value.customColumnFormatters = partial.customColumnFormatters;
@@ -1250,6 +1269,10 @@ export const useSettingsStore = defineStore("settings", () => {
     if (partial.sqlVariableSyntaxOverrides !== undefined) editorSettings.value.sqlVariableSyntaxOverrides = normalizeSqlVariableSyntaxOverrides(partial.sqlVariableSyntaxOverrides);
     if (partial.continueOnErrorOnBatch !== undefined) editorSettings.value.continueOnErrorOnBatch = partial.continueOnErrorOnBatch === true;
     saveEditorSettings(editorSettings.value);
+  }
+
+  async function persistEditorSettings(): Promise<void> {
+    await api.saveEditorSettings(editorSettingsSnapshot(editorSettings.value));
   }
 
   function updateColumnFormatter(key: string, formatter: ColumnFormatterConfig | undefined) {
@@ -1309,6 +1332,7 @@ export const useSettingsStore = defineStore("settings", () => {
     mcpGlobalPolicy,
     initEditorSettings,
     updateEditorSettings,
+    persistEditorSettings,
     initDesktopSettings,
     updateDesktopSettings,
     initMcpGlobalPolicy,
