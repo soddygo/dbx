@@ -96,6 +96,7 @@ import { invalidateTableMetadataCache } from "@/lib/metadata/tableMetadataCache"
 import { MetadataTaskLimiter } from "@/lib/metadata/metadataTaskLimiter";
 import i18n from "@/i18n";
 import type { MqAdminConfig } from "@/types/mq";
+import { RABBITMQ_MQ_TENANT, resolveMqSystemKindFromConnection } from "@/lib/mq/mqConsoleDefaults";
 
 const PINNED_TREE_NODES_STORAGE_KEY = "dbx-pinned-tree-nodes";
 const ACTIVE_CONNECTION_STORAGE_KEY = "dbx-active-connection";
@@ -119,9 +120,9 @@ function sidebarObjectGroupPageSize(): number {
 
 function isFlatMqConnection(config: ConnectionConfig | undefined): boolean {
   if (!config || config.db_type !== "mq") return false;
-  if (config.driver_profile === "kafka" || config.driver_profile === "rocketmq") return true;
+  if (config.driver_profile === "kafka" || config.driver_profile === "rocketmq" || config.driver_profile === "rabbitmq") return true;
   const kind = (config.external_config as Partial<MqAdminConfig> | undefined)?.systemKind;
-  return kind === "kafka" || kind === "rocketmq";
+  return kind === "kafka" || kind === "rocketmq" || kind === "rabbitmq";
 }
 
 type ImportSource = "dbx" | "navicat" | "dbeaver" | "datagrip";
@@ -2046,7 +2047,9 @@ export const useConnectionStore = defineStore("connection", () => {
     const localAttempt = beginLocalConnectionAttempt(config.id);
     try {
       await beforeConnectHandler?.(config);
-      await ensureSqlServerLegacyCompatibilityComponentInstalled(config);
+      if (config.db_type === "sqlserver") {
+        await ensureSqlServerLegacyCompatibilityComponentInstalled(config);
+      }
       ensureLocalConnectionAttemptActive(config.id, localAttempt);
       const id = await withConnectionAttemptTimeout(api.connectDb(config, localAttempt), config);
       await ensureLocalConnectionAttemptActiveAfterConnectResult(config.id, localAttempt, id);
@@ -2213,6 +2216,9 @@ export const useConnectionStore = defineStore("connection", () => {
     const localAttempt = beginLocalConnectionAttempt(connectionId);
     const connectPromise = (async () => {
       await beforeConnectHandler?.(config);
+      if (config.db_type === "sqlserver") {
+        await ensureSqlServerLegacyCompatibilityComponentInstalled(config);
+      }
       ensureLocalConnectionAttemptActive(connectionId, localAttempt);
       const id = await withConnectionAttemptTimeout(api.connectDb(config, localAttempt), config);
       await ensureLocalConnectionAttemptActiveAfterConnectResult(connectionId, localAttempt, id);
@@ -2556,15 +2562,17 @@ export const useConnectionStore = defineStore("connection", () => {
 
       const config = getConfig(connectionId);
       if (isFlatMqConnection(config)) {
-        // Kafka/RocketMQ have no tenant/namespace concept. Create a synthetic child
-        // that opens the MQ admin console directly when clicked.
+        // Kafka/RocketMQ have no tenant/namespace concept; RabbitMQ pins a synthetic
+        // tenant and exposes virtual hosts as namespaces inside the console. Create a
+        // synthetic child that opens the MQ admin console directly when clicked.
+        const mqTenant = resolveMqSystemKindFromConnection(config) === "rabbitmq" ? RABBITMQ_MQ_TENANT : "_flat_mq";
         setChildren(node, [
           {
-            id: schemaCacheKey(connectionId, "mq-tenant", "_flat_mq"),
+            id: schemaCacheKey(connectionId, "mq-tenant", mqTenant),
             label: "Topics",
             type: "mq-tenant" as const,
             connectionId,
-            mqTenant: "_flat_mq",
+            mqTenant,
             mqInitialTab: "topics",
           },
         ]);

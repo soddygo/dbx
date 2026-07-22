@@ -2507,6 +2507,7 @@ export interface QueryResultExportRequest {
   schema?: string;
   sql: string;
   queryBaseSql: string;
+  setupSql?: string[];
   databaseType: DatabaseType;
   useAgentCursor: boolean;
   filePath: string;

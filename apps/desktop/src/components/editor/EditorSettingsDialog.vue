@@ -21,7 +21,6 @@ import {
   useSettingsStore,
   AI_PROVIDER_PRESETS,
   EDITOR_THEMES,
-  FONT_FAMILIES,
   DEFAULT_EDITOR_SETTINGS,
   DEFAULT_DESKTOP_SETTINGS,
   DEFAULT_SIDEBAR_TABLE_PAGE_SIZE,
@@ -64,7 +63,6 @@ import {
   forgetWebdavSyncSecretsPassphrase,
   forgetWebdavSavedPassword,
   getAppSupportInfo,
-  listSystemFonts,
   saveWebdavSyncSecretsPreference,
   saveWebdavSavedPassword,
   saveSnippetSavedToken,
@@ -119,7 +117,8 @@ import { currentLocale, setLocale, type Locale } from "@/i18n";
 import { LOCALE_OPTIONS } from "@/lib/app/localeOptions";
 import { DEFAULT_WEB_DAV_AUTO_UPLOAD_INTERVAL_MINUTES, DEFAULT_WEB_DAV_REMOTE_PATH, normalizedWebDavAutoUploadInterval, writeWebDavAutoUploadFields } from "@/lib/webdav/webdavAutoUploadConfig";
 import { apiUrl } from "@/lib/common/webPath";
-import { DEFAULT_UI_FONT_FAMILY, SYSTEM_UI_FONT_FAMILY } from "@/lib/app/appFonts";
+import { DEFAULT_DATA_GRID_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY, normalizeCustomFontFamilyInput, readableFontFamily, SYSTEM_UI_FONT_FAMILY } from "@/lib/app/appFonts";
+import { buildFontFamilyOptions, displayFontFamily, isPresetFontFamily, loadSystemFontNames } from "@/lib/app/fontFamilyOptions";
 import { buildAppSupportInfoRows, formatAppSupportInfoForClipboard, type AppSupportInfoLabels } from "@/lib/app/supportInfo";
 import { DateTimePatterns, normalizeSupportedDateTimePattern } from "@/lib/dataGrid/columnFormatter";
 import { MAX_RESULT_PAGE_SIZE, MIN_RESULT_PAGE_SIZE } from "@/lib/dataGrid/paginationPageSize";
@@ -150,9 +149,6 @@ const appThemeModeOptions = computed(() => [
   { value: "dark" as AppThemeMode, label: t("toolbar.themeDark"), icon: Moon },
   { value: "system" as AppThemeMode, label: t("toolbar.themeSystem"), icon: SunMoon },
 ]);
-
-let cachedSystemFonts: string[] | null = null;
-let pendingSystemFonts: Promise<string[]> | null = null;
 
 const props = defineProps<{
   open?: boolean;
@@ -264,6 +260,7 @@ function createEmptyTableColumnTemplateRow(): TableColumnTemplateGridRow {
 // Local edit state
 const editFontFamily = ref(settingsStore.editorSettings.fontFamily);
 const editFontSize = ref(settingsStore.editorSettings.fontSize);
+const editTableFontFamily = ref(settingsStore.editorSettings.tableFontFamily);
 const editUiFontFamily = ref(settingsStore.editorSettings.uiFontFamily);
 const editUiScale = ref(settingsStore.editorSettings.uiScale);
 const editTheme = ref(settingsStore.editorSettings.theme);
@@ -418,6 +415,7 @@ function currentEditorSettingsDraft(): EditorSettingsDraft {
   return {
     fontFamily: editFontFamily.value,
     fontSize: editFontSize.value,
+    tableFontFamily: editTableFontFamily.value,
     uiFontFamily: editUiFontFamily.value,
     uiScale: editUiScale.value,
     theme: editTheme.value,
@@ -627,42 +625,19 @@ function confirmDeleteSnippet(snippet: SqlSnippet) {
   }
 }
 
-const presetFontLabels = new Map(FONT_FAMILIES.map((font) => [font.value, font.label]));
-const presetFontValues = new Set(FONT_FAMILIES.map((font) => font.value));
 const uiFontPreviewValues = new Set([DEFAULT_UI_FONT_FAMILY, SYSTEM_UI_FONT_FAMILY]);
 
-function cssFontFamilyForName(name: string): string {
-  return `'${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}', monospace`;
-}
-
-function readableFontFamily(value: string): string {
-  const first = value.split(",")[0]?.trim() ?? value;
-  return first.replace(/^['"]|['"]$/g, "").replace(/\\'/g, "'");
-}
-
-function normalizeCustomFontFamilyInput(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (trimmed.includes(",") || trimmed.includes("'") || trimmed.includes('"')) return trimmed;
-  return cssFontFamilyForName(trimmed);
-}
-
 const systemFontOptions = computed(() => {
-  const options = new Set(FONT_FAMILIES.map((font) => font.value));
-  for (const font of systemFonts.value) options.add(cssFontFamilyForName(font));
-  if (editFontFamily.value) options.add(editFontFamily.value);
-  return [...options];
+  return buildFontFamilyOptions(systemFonts.value, [editFontFamily.value]);
 });
+
+const tableFontOptions = computed(() => buildFontFamilyOptions(systemFonts.value, [editTableFontFamily.value], [DEFAULT_DATA_GRID_FONT_FAMILY]));
 
 const uiFontOptions = computed(() => {
   const options = new Set([SYSTEM_UI_FONT_FAMILY, DEFAULT_UI_FONT_FAMILY, ...systemFontOptions.value]);
   if (editUiFontFamily.value) options.add(editUiFontFamily.value);
   return [...options];
 });
-
-function displayFontFamily(value: string): string {
-  return presetFontLabels.get(value) ?? readableFontFamily(value);
-}
 
 function displayUiFontFamily(value: string): string {
   if (value === SYSTEM_UI_FONT_FAMILY) return t("settings.uiFontSystemDefault");
@@ -671,22 +646,14 @@ function displayUiFontFamily(value: string): string {
 }
 
 function fontOptionStyle(value: string, selectedValue = editFontFamily.value) {
-  return presetFontValues.has(value) || uiFontPreviewValues.has(value) || value === selectedValue ? { fontFamily: value } : undefined;
+  return isPresetFontFamily(value) || uiFontPreviewValues.has(value) || value === selectedValue ? { fontFamily: value } : undefined;
 }
 
 async function loadSystemFontOptions() {
   if (systemFontsLoaded.value || systemFontsLoading.value) return;
   systemFontsLoading.value = true;
   try {
-    if (cachedSystemFonts) {
-      systemFonts.value = cachedSystemFonts;
-    } else {
-      pendingSystemFonts ??= listSystemFonts().finally(() => {
-        pendingSystemFonts = null;
-      });
-      cachedSystemFonts = await pendingSystemFonts;
-      systemFonts.value = cachedSystemFonts;
-    }
+    systemFonts.value = await loadSystemFontNames();
     systemFontsLoaded.value = true;
   } catch {
     systemFonts.value = [];
@@ -698,6 +665,7 @@ async function loadSystemFontOptions() {
 function syncEditorSettingsDraftFromStore() {
   editFontFamily.value = settingsStore.editorSettings.fontFamily;
   editFontSize.value = settingsStore.editorSettings.fontSize;
+  editTableFontFamily.value = settingsStore.editorSettings.tableFontFamily;
   editUiFontFamily.value = settingsStore.editorSettings.uiFontFamily;
   editUiScale.value = settingsStore.editorSettings.uiScale;
   editTheme.value = settingsStore.editorSettings.theme;
@@ -915,6 +883,7 @@ function resetDefaultsForTab(tab: SettingsCategory) {
     editSqlFormatter.value = normalizeSqlFormatterSettings(DEFAULT_EDITOR_SETTINGS.sqlFormatter);
     sqlFormatterConfigValid.value = true;
   } else if (tab === "appearance") {
+    editTableFontFamily.value = DEFAULT_EDITOR_SETTINGS.tableFontFamily;
     editUiFontFamily.value = DEFAULT_EDITOR_SETTINGS.uiFontFamily;
     editUiScale.value = DEFAULT_EDITOR_SETTINGS.uiScale;
     editTheme.value = DEFAULT_EDITOR_SETTINGS.theme;
@@ -973,6 +942,7 @@ function resetDefaultsForTab(tab: SettingsCategory) {
 function resetAllDefaults() {
   editFontFamily.value = DEFAULT_EDITOR_SETTINGS.fontFamily;
   editFontSize.value = DEFAULT_EDITOR_SETTINGS.fontSize;
+  editTableFontFamily.value = DEFAULT_EDITOR_SETTINGS.tableFontFamily;
   editUiFontFamily.value = DEFAULT_EDITOR_SETTINGS.uiFontFamily;
   editUiScale.value = DEFAULT_EDITOR_SETTINGS.uiScale;
   editTheme.value = DEFAULT_EDITOR_SETTINGS.theme;
@@ -1172,6 +1142,10 @@ function onSqlSemanticDiagnosticsEnabledChange(value: boolean) {
 
 function onFontFamilyChange(v: any) {
   if (typeof v === "string") editFontFamily.value = v;
+}
+
+function onTableFontFamilyChange(v: any) {
+  if (typeof v === "string") editTableFontFamily.value = v;
 }
 
 function onUiFontFamilyChange(v: any) {
@@ -3430,7 +3404,7 @@ onUnmounted(cleanupPreviewEditor);
               <SqlFormatterSettingsPanel v-model="editSqlFormatter" @validity-change="(value: boolean) => (sqlFormatterConfigValid = value)" />
             </section>
 
-            <section v-else-if="activeSettingsTab === 'appearance'" class="settings-appearance-section flex flex-col gap-5 py-2">
+            <section v-else-if="activeSettingsTab === 'appearance'" class="settings-appearance-section flex flex-col gap-4 py-2">
               <div class="settings-appearance-top-grid">
                 <div class="settings-appearance-field min-w-0">
                   <div class="flex h-9 items-end">
@@ -3485,7 +3459,36 @@ onUnmounted(cleanupPreviewEditor);
                 </div>
 
                 <div class="settings-appearance-field min-w-0">
-                  <div class="flex h-9 items-end gap-1">
+                  <div class="flex h-9 items-end">
+                    <div class="flex min-w-0 items-center gap-1">
+                      <Label class="min-w-0 whitespace-normal leading-tight">{{ t("settings.uiScale") }}</Label>
+                      <HelpTooltip :label="t('settings.uiScale')" trigger-class="[&_svg]:h-3 [&_svg]:w-3" content-class="max-w-64">
+                        <p>{{ t("settings.uiScaleDescription") }}</p>
+                      </HelpTooltip>
+                    </div>
+                  </div>
+                  <Select
+                    :model-value="String(editUiScale)"
+                    @update:model-value="
+                      (value: any) => {
+                        const next = Number(value);
+                        if (Number.isFinite(next)) editUiScale = next;
+                      }
+                    "
+                  >
+                    <SelectTrigger class="h-8 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="scale in uiScaleOptions" :key="scale" :value="String(scale)" class="pl-2.5"> {{ Math.round(scale * 100) }}% </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <div class="settings-appearance-field min-w-0">
+                  <div class="flex min-w-0 items-center gap-1">
                     <Label class="min-w-0 whitespace-normal leading-tight">{{ t("settings.uiFontFamily") }}</Label>
                     <HelpTooltip :label="t('settings.uiFontFamily')" trigger-class="[&_svg]:h-3 [&_svg]:w-3" content-class="max-w-64">
                       <p>{{ t("settings.uiFontFamilyDescription") }}</p>
@@ -3524,28 +3527,42 @@ onUnmounted(cleanupPreviewEditor);
                 </div>
 
                 <div class="settings-appearance-field min-w-0">
-                  <div class="flex h-9 items-end gap-1">
-                    <Label class="min-w-0 whitespace-normal leading-tight">{{ t("settings.uiScale") }}</Label>
-                    <HelpTooltip :label="t('settings.uiScale')" trigger-class="[&_svg]:h-3 [&_svg]:w-3" content-class="max-w-64">
-                      <p>{{ t("settings.uiScaleDescription") }}</p>
+                  <div class="flex min-w-0 items-center gap-1">
+                    <Label class="min-w-0 whitespace-normal leading-tight">{{ t("settings.dataGridFontFamily") }}</Label>
+                    <HelpTooltip :label="t('settings.dataGridFontFamily')" trigger-class="[&_svg]:h-3 [&_svg]:w-3" content-class="max-w-64">
+                      <p>{{ t("settings.dataGridFontFamilyDescription") }}</p>
                     </HelpTooltip>
                   </div>
-                  <Select
-                    :model-value="String(editUiScale)"
-                    @update:model-value="
-                      (value: any) => {
-                        const next = Number(value);
-                        if (Number.isFinite(next)) editUiScale = next;
-                      }
-                    "
+                  <SearchableSelect
+                    :model-value="editTableFontFamily"
+                    :options="tableFontOptions"
+                    :placeholder="t('settings.selectFont')"
+                    :search-placeholder="t('settings.searchFont')"
+                    :empty-text="t('settings.noFontsFound')"
+                    :loading-text="t('settings.loadingFonts')"
+                    allow-custom
+                    :display-name="displayFontFamily"
+                    :normalize-custom="normalizeCustomFontFamilyInput"
+                    trigger-variant="outline"
+                    trigger-class="h-9 w-full max-w-none justify-between"
+                    content-class="w-[var(--reka-popover-trigger-width)] min-w-[260px]"
+                    @update:model-value="onTableFontFamilyChange"
+                    @update:open="(open: boolean) => open && loadSystemFontOptions()"
                   >
-                    <SelectTrigger class="h-8 w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="scale in uiScaleOptions" :key="scale" :value="String(scale)" class="pl-2.5"> {{ Math.round(scale * 100) }}% </SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <template #trigger-label="{ label, loading }">
+                      <span class="truncate" :style="{ fontFamily: editTableFontFamily }">
+                        {{ loading ? t("settings.loadingFonts") : label }}
+                      </span>
+                    </template>
+                    <template #option-label="{ option, label }">
+                      <span class="truncate" :style="fontOptionStyle(option, editTableFontFamily)">{{ label }}</span>
+                    </template>
+                    <template #custom-option-label="{ value }">
+                      <span class="truncate" :style="{ fontFamily: value }">
+                        {{ t("settings.useCustomFont", { font: readableFontFamily(value) }) }}
+                      </span>
+                    </template>
+                  </SearchableSelect>
                 </div>
               </div>
 
@@ -5712,13 +5729,9 @@ onUnmounted(cleanupPreviewEditor);
   box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.45) !important;
 }
 
-.settings-appearance-section > * + * {
-  margin-top: 1.25rem;
-}
-
 .settings-appearance-top-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   column-gap: 0.75rem;
   row-gap: 1rem;
 }

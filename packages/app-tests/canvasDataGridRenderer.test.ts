@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import { fitCanvasText, resolveCanvasDataGridRowFill } from "../../apps/desktop/src/lib/dataGrid/canvasDataGridRenderer.ts";
+import { DATA_GRID_DARK_STRIPED_ROW_BG, DATA_GRID_LIGHT_STRIPED_ROW_BG, resolveDataGridPaintTheme } from "../../apps/desktop/src/lib/dataGrid/dataGridPaintTheme.ts";
 
 function measureContext(charWidth = 1): CanvasRenderingContext2D {
   return {
@@ -28,4 +29,19 @@ test("canvas row fill keeps frozen and scrolling regions on the same selection s
   assert.equal(resolveCanvasDataGridRowFill(theme, "base", { isActive: true, isDeleted: false, isSelected: false }), "active-blue");
   assert.equal(resolveCanvasDataGridRowFill(theme, "base", { isActive: true, isDeleted: false, isSelected: true }), "selected-blue");
   assert.equal(resolveCanvasDataGridRowFill(theme, "deleted", { isActive: true, isDeleted: true, isSelected: false }), "deleted");
+});
+
+test("data grid paint themes use the increased striped row contrast", () => {
+  const getVar = () => "";
+
+  const lightTheme = resolveDataGridPaintTheme({ getVar, isDark: false });
+  assert.equal(lightTheme.rowMuted, DATA_GRID_LIGHT_STRIPED_ROW_BG);
+  assert.notEqual(lightTheme.rowMuted, lightTheme.rowNew);
+  assert.equal(resolveDataGridPaintTheme({ getVar, isDark: true }).rowMuted, DATA_GRID_DARK_STRIPED_ROW_BG);
+});
+
+test("data grid paint theme uses the resolved striped row token", () => {
+  const getVar = (name: string) => (name === "--data-grid-row-muted-bg" ? "rgb(235, 239, 244)" : "");
+
+  assert.equal(resolveDataGridPaintTheme({ getVar, isDark: false }).rowMuted, "rgb(235, 239, 244)");
 });
