@@ -178,7 +178,10 @@ fn append_missing_primary_keys(
                     format!("Primary key column '{primary_key}' is not present in the result set."),
                 )
             })?;
-        if context.request.rows.iter().any(|row| row.get(column.source_index).is_none_or(Value::is_null)) {
+        if context.request.rows.iter().any(|row| match row.get(column.source_index) {
+            Some(value) => value.is_null(),
+            None => true,
+        }) {
             return Err(DataGridExtractError::new(
                 DataGridExtractErrorCode::NullPrimaryKey,
                 format!("Primary key column '{primary_key}' contains a NULL value."),
