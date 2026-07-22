@@ -144,8 +144,8 @@ export function formatSelectionAsTsv(selection: SelectionData, includeHeader = f
   return [selection.columns.join("\t"), body].filter(Boolean).join("\n");
 }
 
-export function formatSelectionAsCsv(selection: SelectionData): string {
-  const header = selection.columns.map(csvValue).join(",");
+export function formatSelectionAsCsv(selection: SelectionData, includeHeader = true): string {
+  const header = includeHeader ? selection.columns.map(csvValue).join(",") : "";
   const body = selection.rows.map((row) => row.map(csvValue).join(",")).join("\n");
   return [header, body].filter(Boolean).join("\n");
 }

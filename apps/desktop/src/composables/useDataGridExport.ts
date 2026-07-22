@@ -1,8 +1,10 @@
 import { computed, ref, type ComputedRef, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useDataGridExtractor } from "@/composables/useDataGridExtractor";
 import { isTauriRuntime } from "@/lib/backend/tauriRuntime";
 import * as api from "@/lib/backend/api";
-import { formatSelectionAsCsv, formatSelectionAsJson, formatSelectionAsSqlInList, formatSelectionAsTsv, type CellSelectionMatrix, type CellSelectionRange, type SelectionData } from "@/lib/dataGrid/gridSelection";
+import { formatSelectionAsCsv, formatSelectionAsJson, formatSelectionAsSqlInList, formatSelectionAsTsv, normalizeSelectedColumnIndexes, type CellSelectionMatrix, type CellSelectionRange, type SelectionData } from "@/lib/dataGrid/gridSelection";
+import type { DataGridExtractorOptions } from "@/lib/dataGrid/dataGridCopyExtractor";
 import { useToast } from "@/composables/useToast";
 import { displayCellValue, type CellValue } from "@/lib/dataGrid/cellValue";
 import { tryStartExclusiveActivation, type ActionActivationGuard } from "@/lib/connection/actionActivation";
@@ -54,6 +56,11 @@ interface RowItem {
 export interface UseDataGridExportOptions {
   columns: ComputedRef<string[]>;
   displayItems: ComputedRef<RowItem[]>;
+  allColumns?: ComputedRef<string[]>;
+  allDisplayItems?: ComputedRef<RowItem[]>;
+  allSourceColumns?: ComputedRef<Array<string | undefined> | undefined>;
+  visibleColumnIndexes?: ComputedRef<number[]>;
+  extractorOptions?: ComputedRef<DataGridExtractorOptions>;
   sql: ComputedRef<string | undefined>;
   exportSql?: ComputedRef<string | undefined>;
   tableMeta: ComputedRef<DataGridTableMeta | undefined>;
@@ -69,8 +76,9 @@ export interface UseDataGridExportOptions {
   orderBy: ComputedRef<string | undefined>;
   exportBatchSize: ComputedRef<number>;
   hasCellSelection: ComputedRef<boolean>;
+  hasColumnSelection?: ComputedRef<boolean>;
   selectedCells: ComputedRef<SelectionData>;
-  selectedCellMatrix?: ComputedRef<CellSelectionMatrix | null>;
+  selectedCellMatrix: ComputedRef<CellSelectionMatrix | null>;
   selectedRange: ComputedRef<CellSelectionRange | null>;
   contextCell: Ref<{ rowId: number; rowIndex: number; col: number } | null> | ComputedRef<{ rowId: number; rowIndex: number; col: number } | null>;
   getRowItem: (rowId: number) => RowItem | undefined;
@@ -127,6 +135,12 @@ interface CopyInsertData {
   rows: RowItem[];
 }
 
+interface CopyUpdateData {
+  columns: string[];
+  sourceColumns?: Array<string | undefined>;
+  rows: RowItem[];
+}
+
 export function useDataGridExport(options: UseDataGridExportOptions) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -177,6 +191,11 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
   const {
     columns,
     displayItems,
+    allColumns: allColumnsOption,
+    allDisplayItems: allDisplayItemsOption,
+    allSourceColumns: allSourceColumnsOption,
+    visibleColumnIndexes: visibleColumnIndexesOption,
+    extractorOptions: extractorOptionsOption,
     sql,
     exportSql: resultExportSql,
     tableMeta,
@@ -191,6 +210,7 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     columnTypes,
     exportBatchSize,
     hasCellSelection,
+    hasColumnSelection: hasColumnSelectionOption,
     selectedCells,
     selectedCellMatrix: selectedCellMatrixOption,
     selectedRange,
@@ -209,7 +229,12 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     exportProgressState,
     exportCancelHandler,
   } = options;
-  const selectedCellMatrix = selectedCellMatrixOption ?? computed<CellSelectionMatrix | null>(() => null);
+  const selectedCellMatrix = selectedCellMatrixOption;
+  const allColumns = allColumnsOption ?? columns;
+  const allDisplayItems = allDisplayItemsOption ?? displayItems;
+  const allSourceColumns = allSourceColumnsOption ?? sourceColumns;
+  const visibleColumnIndexes = visibleColumnIndexesOption ?? computed(() => columns.value.map((_, index) => index));
+  const hasColumnSelection = hasColumnSelectionOption ?? computed(() => false);
 
   async function copyText(text: string, gridCopy?: { rows: readonly (readonly unknown[])[]; includeHeader?: boolean }) {
     const copiedRows = gridCopy?.rows.map((row) => [...row]);
@@ -218,8 +243,10 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
       await copyToClipboard(text);
       if (copiedRows) rememberDataGridClipboardCopy(text, copiedRows, gridCopy?.includeHeader);
       toast(t("grid.copied"));
+      return true;
     } catch (e: any) {
       toast(t("grid.copyFailed", { message: e?.message || String(e) }), 5000);
+      return false;
     }
   }
 
@@ -311,19 +338,65 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     return item && !item.isDraft ? [item] : [];
   }
 
-  function updateEligibleRows(): RowItem[] {
-    return targetedRows().filter((item) => !item.isNew && !item.isDraft && !item.isDeleted);
+  function updateTargetRows(): RowItem[] {
+    if (hasRowSelection.value && selectedRowIds.value.size > 0) {
+      return allDisplayItems.value.filter((item) => selectedRowIds.value.has(item.id));
+    }
+    const matrix = selectedCellMatrix.value;
+    if (hasCellSelection.value && matrix) {
+      return matrix.rowIndexes.map((rowIndex) => allDisplayItems.value[rowIndex]).filter((item): item is RowItem => !!item);
+    }
+    const current = contextCell.value;
+    if (!current) return [];
+    const item = allDisplayItems.value.find((candidate) => candidate.id === current.rowId);
+    return item ? [item] : [];
+  }
+
+  function updateCopyData(): CopyUpdateData | null {
+    const currentTableMeta = tableMeta.value;
+    if (!currentTableMeta?.primaryKeys.length) return null;
+    const rows = updateTargetRows();
+    if (rows.length === 0 || rows.some((item) => item.isNew || item.isDraft || item.isDeleted)) return null;
+
+    const saveColumns = effectiveColumns(allSourceColumns.value, allColumns.value);
+    const selectedIndexes = hasCellSelection.value && selectedCellMatrix.value ? selectedCellMatrix.value.columnIndexes.map((visibleIndex) => visibleColumnIndexes.value[visibleIndex]).filter((index): index is number => index !== undefined) : [...visibleColumnIndexes.value];
+    const primaryKeyIndexes = currentTableMeta.primaryKeys.map((primaryKey) => findColumnIndex(saveColumns, primaryKey));
+    if (primaryKeyIndexes.some((index) => index < 0)) return null;
+    if (rows.some((item) => primaryKeyIndexes.some((index) => item.data[index] === null || item.data[index] === undefined))) return null;
+
+    const primaryKeySet = new Set(currentTableMeta.primaryKeys.map(normalizeColumnName));
+    const writableIndexes = selectedIndexes.filter((index) => {
+      const column = saveColumns[index];
+      return !!column && !primaryKeySet.has(normalizeColumnName(column));
+    });
+    if (writableIndexes.length === 0) return null;
+
+    const indexes = normalizeSelectedColumnIndexes([...writableIndexes, ...primaryKeyIndexes]);
+    const narrowedColumns = indexes.map((index) => allColumns.value[index]).filter((column): column is string => column !== undefined);
+    if (narrowedColumns.length !== indexes.length) return null;
+    const narrowedSourceColumns = allSourceColumns.value?.length === allColumns.value.length ? indexes.map((index) => allSourceColumns.value?.[index]) : undefined;
+    return {
+      columns: narrowedColumns,
+      sourceColumns: narrowedSourceColumns,
+      rows: rows.map((item) => ({
+        ...item,
+        data: indexes.map((index) => item.data[index] ?? null),
+        isDirtyCol: indexes.map((index) => item.isDirtyCol[index] ?? false),
+      })),
+    };
   }
 
   function updateCopyKey(): string {
-    const rows = copyStatementRowsKey(updateEligibleRows());
+    const data = updateCopyData();
+    if (!data) return "";
+    const rows = copyStatementRowsKey(data.rows);
     return JSON.stringify({
       databaseType: databaseType.value ?? null,
       schema: tableMeta.value?.schema ?? null,
       tableName: tableMeta.value?.tableName ?? null,
       primaryKeys: tableMeta.value?.primaryKeys ?? [],
-      columns: columns.value,
-      sourceColumns: sourceColumns.value ?? null,
+      columns: data.columns,
+      sourceColumns: data.sourceColumns ?? null,
       rows,
     });
   }
@@ -643,8 +716,8 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
       });
       return;
     }
-    const rows = updateEligibleRows();
-    if (!rows.length) {
+    const data = updateCopyData();
+    if (!data) {
       setUpdateCopyCache({
         key: "",
         text: "",
@@ -662,9 +735,9 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
       const statements = await buildDataGridCopyUpdateStatements({
         databaseType: databaseType.value,
         tableMeta: currentTableMeta,
-        columns: columns.value,
-        sourceColumns: sourceColumns.value,
-        rows: rows.map((item) => item.data),
+        columns: data.columns,
+        sourceColumns: data.sourceColumns,
+        rows: data.rows.map((item) => item.data),
       });
       const latest = copyRowUpdateCache.value;
       if (latest.key !== key || latest.promise !== promise) return undefined;
@@ -831,20 +904,13 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
   }
 
   const canCopyRowAsUpdate = computed(() => {
-    if (!tableMeta.value?.primaryKeys.length) return false;
-    const rows = updateEligibleRows();
-    if (!rows.length) return false;
     if (databaseType.value === "neo4j" || databaseType.value === "tdengine") return false;
-    const saveColumns = effectiveColumns(sourceColumns.value, columns.value);
-    const primaryKeys = tableMeta.value.primaryKeys;
-    if (primaryKeys.some((primaryKey) => findColumnIndex(saveColumns, primaryKey) === -1)) return false;
-    const primaryKeySet = new Set(primaryKeys.map(normalizeColumnName));
-    return saveColumns.some((column) => column && !primaryKeySet.has(normalizeColumnName(column)));
+    return updateCopyData() !== null;
   });
 
-  function insertableCopyColumnCount(excludePrimaryKeys: boolean, copyColumns = effectiveColumns(sourceColumns.value, columns.value)): number {
+  function insertableCopyColumnCount(excludePrimaryKeys: boolean, copyColumns = effectiveColumns(sourceColumns.value, columns.value), extractorOptions?: DataGridExtractorOptions): number {
     const primaryKeySet = new Set((tableMeta.value?.primaryKeys ?? []).map(normalizeColumnName));
-    return copyColumns.filter((column): column is string => !!column && !isCopyInsertOmittedColumn(databaseType.value, column, tableMeta.value) && (!excludePrimaryKeys || !primaryKeySet.has(normalizeColumnName(column)))).length;
+    return copyColumns.filter((column): column is string => !!column && !isCopyInsertOmittedColumn(databaseType.value, column, tableMeta.value, extractorOptions) && (!excludePrimaryKeys || !primaryKeySet.has(normalizeColumnName(column)))).length;
   }
 
   const canCopyRowAsInsert = computed(() => insertEligibleRows().length > 0 && insertableCopyColumnCount(false) > 0);
@@ -852,6 +918,44 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
   const canCopySelectionAsInsert = computed(() => {
     const data = selectionInsertData();
     return !!data?.rows.length && insertableCopyColumnCount(false, effectiveColumns(data.sourceColumns, data.columns)) > 0;
+  });
+
+  async function buildMongoExtractorInsert(extractorOptions: DataGridExtractorOptions, rowLimit?: number): Promise<string | undefined> {
+    const data: CopyInsertData | null = hasRowSelection.value
+      ? {
+          columns: columns.value,
+          sourceColumns: sourceColumns.value,
+          columnTypes: columnTypes.value?.map((type) => type ?? undefined),
+          rows: insertEligibleRows(),
+        }
+      : selectionInsertData();
+    if (!data) return undefined;
+    await yieldToMainThread();
+    return buildCopyInsertStatement(rowLimit === undefined ? data : { ...data, rows: data.rows.slice(0, rowLimit) }, extractorOptions.sql.excludePrimaryKeysFromInsert, extractorOptions.sql.insertMode);
+  }
+
+  const { copyWithExtractor, previewWithExtractor, canCopyWithExtractor } = useDataGridExtractor({
+    columns,
+    displayItems,
+    allColumns,
+    allDisplayItems,
+    allSourceColumns,
+    visibleColumnIndexes,
+    extractorOptions: extractorOptionsOption,
+    databaseType,
+    tableMeta,
+    hasCellSelection,
+    selectedCells,
+    selectedCellMatrix,
+    hasRowSelection,
+    hasColumnSelection,
+    selectedRowIds,
+    copyText,
+    canCopySqlInsert: (request) => {
+      const selectedColumns = request.selectedColumnIndexes.map((index) => request.columns[index]?.sourceName ?? request.columns[index]?.displayName).filter((column): column is string => !!column);
+      return request.rows.length > 0 && insertableCopyColumnCount(request.options.sql.excludePrimaryKeysFromInsert, selectedColumns, request.options) > 0;
+    },
+    buildMongoInsert: buildMongoExtractorInsert,
   });
 
   const canCopyRowAsInsertWithoutPrimaryKeys = computed(() => {
@@ -1496,6 +1600,9 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     copySelectionCsv,
     copySelectionJson,
     copySelectionSqlInList,
+    copyWithExtractor,
+    previewWithExtractor,
+    canCopyWithExtractor,
     copySelectionAsInsert,
     prefetchSelectionAsInsertStatement,
     canCopyPreparedSelectionInsert,
@@ -1617,13 +1724,15 @@ function effectiveColumns(sourceColumns: Array<string | undefined> | undefined, 
   return sourceColumns;
 }
 
-function isCopyInsertOmittedColumn(databaseType: DatabaseType | undefined, column: string, tableMeta: DataGridTableMeta | undefined): boolean {
+function isCopyInsertOmittedColumn(databaseType: DatabaseType | undefined, column: string, tableMeta: DataGridTableMeta | undefined, extractorOptions?: DataGridExtractorOptions): boolean {
   if (usesSyntheticRowIdKey(databaseType, [column])) return true;
   const columnInfo = tableMeta?.columns?.find((item) => normalizeColumnName(item.name) === normalizeColumnName(column));
   const normalizedType = columnInfo?.data_type.trim().replace(/^"|"$/g, "").toLowerCase();
   if (databaseType === "postgres" && (normalizedType === "tsvector" || normalizedType?.endsWith(".tsvector"))) return true;
   const extra = columnInfo?.extra?.toLowerCase() ?? "";
-  return /\b(auto_increment|autoincrement|identity)\b/.test(extra) || (extra.includes("generated always as") && !extra.includes("identity"));
+  const isAutoGenerated = /\b(auto_increment|autoincrement|identity)\b/.test(extra);
+  const isComputed = extra.includes("generated always as") && !extra.includes("identity");
+  return ((extractorOptions?.sql.skipGeneratedColumns ?? true) && isAutoGenerated) || ((extractorOptions?.sql.skipComputedColumns ?? true) && isComputed);
 }
 
 function findColumnIndex(columns: Array<string | undefined>, target: string): number {

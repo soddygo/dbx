@@ -20,7 +20,7 @@ describe("extractSqlParameters", () => {
       where id = \${id}
     `;
     expect(extractSqlParameters(sql)).toEqual(["quoted", "identifier", "id"]);
-    expect(extractSqlParameterDescriptors("select * from t where dt='\${date}' and flag=\"#{enabled}\"")).toEqual([
+    expect(extractSqlParameterDescriptors("select * from t where dt='${date}' and flag=\"#{enabled}\"")).toEqual([
       { key: "date", name: "date", syntax: "shell", token: "'${date}'" },
       { key: "enabled", name: "enabled", syntax: "mybatis", token: '"#{enabled}"' },
     ]);

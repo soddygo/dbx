@@ -57,6 +57,7 @@ import DataGridCellDetailPanel from "@/components/grid/DataGridCellDetailPanel.v
 import DataGridPagination from "@/components/grid/DataGridPagination.vue";
 import DataGridSearchBar from "@/components/grid/DataGridSearchBar.vue";
 import DataGridToolbar from "@/components/grid/DataGridToolbar.vue";
+import DataGridExtractorDialog from "@/components/grid/DataGridExtractorDialog.vue";
 import DataGridColumnHeader from "@/components/grid/DataGridColumnHeader.vue";
 import DataGridQueryControls from "@/components/grid/DataGridQueryControls.vue";
 import TemporalCellEditor from "@/components/grid/TemporalCellEditor.vue";
@@ -67,6 +68,7 @@ import { tableColumnDefaultDisplayValue } from "@/lib/table/tableColumnDefaultPr
 import * as api from "@/lib/backend/api";
 import { formatElapsedSeconds } from "@/lib/common/elapsedTime";
 import { dataGridCellDisplayText, dataGridCellEditorText } from "@/lib/dataGrid/dataGridCellCoercion";
+import { dataGridActiveRowBackground } from "@/lib/dataGrid/dataGridPaintTheme";
 import { createColumnDrafts } from "@/lib/table/tableStructureEditorState";
 import type { BuildSingleColumnAlterSqlOptions } from "@/lib/table/tableStructureEditorSql";
 import { buildTableSelectSql, quoteTableDataIdentifier } from "@/lib/table/tableSelectSql";
@@ -175,6 +177,7 @@ import { useToast } from "@/composables/useToast";
 import { useDataGridExport } from "@/composables/useDataGridExport";
 import { eventTargetAllowsNativeClipboard, isPlainClipboardShortcut, readTextFromClipboard } from "@/lib/common/clipboard";
 import { claimDataGridPaste, clearDataGridClipboardCopy, parseDataGridClipboard, planDataGridPaste } from "@/lib/dataGrid/dataGridClipboard";
+import { DATA_GRID_COPY_EXTRACTOR_DESCRIPTORS, DATA_GRID_COPY_EXTRACTOR_IDS, type DataGridCopyExtractorId } from "@/lib/dataGrid/dataGridCopyExtractor";
 import { DATA_GRID_ROW_NUM_WIDTH, useDataGridColumnResize } from "@/composables/useDataGridColumnResize";
 import { createDataGridColumnStructureSignature } from "@/lib/dataGrid/dataGridColumnWidthState";
 import { useDataGridColumnLayout, useDataGridColumnLayoutState } from "@/composables/useDataGridColumnLayout";
@@ -198,7 +201,7 @@ import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { DataGridSortDirection, DataGridSortMode } from "@/lib/dataGrid/dataGridSort";
-import { DATA_GRID_COMPACT_TOPBAR_WIDTH, type DataGridReloadIntent, type DataGridToolbarActionCapability, type DataGridToolbarAutoRefreshCapability, type DataGridToolbarSaveCapability } from "@/lib/dataGrid/dataGridToolbar";
+import { DATA_GRID_COMPACT_TOPBAR_WIDTH, type DataGridReloadIntent, type DataGridToolbarActionCapability, type DataGridToolbarAutoRefreshCapability, type DataGridToolbarCopyCapability, type DataGridToolbarSaveCapability } from "@/lib/dataGrid/dataGridToolbar";
 import { getTableMetadataCapabilities } from "@/lib/table/tableMetadataCapabilities";
 import { getTableStructureCapabilities } from "@/lib/table/tableStructureCapabilities";
 import { filterObjectBrowserTableColumns } from "@/lib/table/objectBrowserTableInfo";
@@ -3376,6 +3379,7 @@ const selection = useDataGridSelection({
   gridRef,
   getScrollElement: dataGridSelectionScroller,
   cellFromClientPoint: dataGridCellFromClientPoint,
+  rowFromClientPoint: dataGridRowFromClientPoint,
   runtimeScope: dataGridRuntimeScope,
 });
 
@@ -3404,6 +3408,7 @@ const {
   hasColumnSelection,
   clearRowSelection,
   handleRowClick,
+  beginRowSelection,
   handleDataCellMousedown,
   isRowSelected,
 } = selection;
@@ -4302,30 +4307,33 @@ function rowNumberStatusClass(item: RowItem): string {
 }
 
 function rowCellsUseSelectionVisual(rowId: number): boolean {
-  return hasRowSelection.value && isRowSelected(rowId) && !hasCellSelection.value;
+  return hasRowSelection.value && isRowSelected(rowId);
 }
 
 function dataGridRowStyle(item: RowItem): CSSProperties {
   const dark = isDark.value || (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+  const activeRowBg = dataGridActiveRowBackground(dark);
   const rowBg = item.isDeleted
     ? dark
       ? "rgb(55, 31, 32)"
       : "rgb(255, 244, 244)"
-    : item.isNew
-      ? dark
-        ? "rgb(51, 51, 55)"
-        : "rgb(243, 243, 243)"
-      : item.isDraft
+    : isRowActive(item.displayIndex)
+      ? activeRowBg
+      : item.isNew
         ? dark
           ? "rgb(51, 51, 55)"
           : "rgb(243, 243, 243)"
-        : item.displayIndex % 2 === 1
+        : item.isDraft
           ? dark
-            ? "rgb(32, 32, 34)"
-            : "rgb(248, 248, 248)"
-          : dark
-            ? "rgb(19, 20, 22)"
-            : "rgb(255, 255, 255)";
+            ? "rgb(51, 51, 55)"
+            : "rgb(243, 243, 243)"
+          : item.displayIndex % 2 === 1
+            ? dark
+              ? "rgb(32, 32, 34)"
+              : "rgb(248, 248, 248)"
+            : dark
+              ? "rgb(19, 20, 22)"
+              : "rgb(255, 255, 255)";
   const rowNumberBg =
     item.status === "new"
       ? dark
@@ -4340,20 +4348,19 @@ function dataGridRowStyle(item: RowItem): CSSProperties {
             ? "rgb(55, 31, 32)"
             : "rgb(255, 244, 244)"
           : isRowActive(item.displayIndex) && !item.isDeleted
-            ? dark
-              ? "rgb(66, 67, 70)"
-              : "rgb(226, 226, 226)"
+            ? activeRowBg
             : dark
               ? "rgb(35, 37, 42)"
               : "rgb(255, 255, 255)";
   return {
     "--data-grid-cell-bg": rowBg,
     "--data-grid-row-number-bg": rowNumberBg,
-    "--data-grid-cell-selected-bg": dark ? "rgb(66, 67, 70)" : "rgb(226, 226, 226)",
-    "--data-grid-cell-selected-dirty-bg": dark ? "rgb(94, 75, 26)" : "rgb(244, 229, 186)",
-    "--data-grid-cell-selected-border": dark ? "rgb(170, 170, 175)" : "rgb(90, 90, 90)",
-    "--data-grid-row-number-active-bg": dark ? "rgb(66, 67, 70)" : "rgb(232, 232, 232)",
-    "--data-grid-row-number-selected-bg": dark ? "rgb(66, 67, 70)" : "rgb(226, 226, 226)",
+    "--data-grid-cell-selected-bg": dark ? "rgb(20, 40, 60)" : "rgb(239, 246, 255)",
+    "--data-grid-cell-selected-single-bg": dark ? "rgb(30, 64, 96)" : "rgb(191, 219, 254)",
+    "--data-grid-cell-selected-dirty-bg": dark ? "rgb(76, 66, 38)" : "rgb(235, 224, 184)",
+    "--data-grid-cell-selected-border": dark ? "rgb(96, 165, 250)" : "rgb(59, 130, 246)",
+    "--data-grid-row-number-active-bg": activeRowBg,
+    "--data-grid-row-number-selected-bg": dark ? "rgb(30, 64, 96)" : "rgb(191, 219, 254)",
   } as CSSProperties;
 }
 
@@ -4433,6 +4440,24 @@ function dataGridCellFromClientPoint(clientX: number, clientY: number): { rowInd
   const colIndex = Number(cell?.dataset.visibleColIndex);
   if (!Number.isInteger(rowIndex) || !Number.isInteger(colIndex)) return null;
   return { rowIndex, colIndex };
+}
+
+function dataGridRowFromClientPoint(_clientX: number, clientY: number): number | null {
+  const scroller = dataGridSelectionScroller();
+  if (!scroller) return null;
+  const rect = scroller.getBoundingClientRect();
+  const clampedY = Math.min(rect.bottom - 1, Math.max(rect.top + 1, clientY));
+
+  if (useCanvasGridRows.value) {
+    const rowIndex = Math.floor((scroller.scrollTop + clampedY - rect.top) / CANVAS_DATA_GRID_ROW_HEIGHT);
+    const item = displayItemAt(rowIndex);
+    return item?.displayIndex ?? null;
+  }
+
+  const target = document.elementFromPoint(rect.left + Math.min(DATA_GRID_ROW_NUM_WIDTH / 2, rect.width / 2), clampedY);
+  const row = target instanceof Element ? target.closest<HTMLElement>("[data-row-index]") : null;
+  const rowIndex = Number(row?.dataset.rowIndex);
+  return Number.isInteger(rowIndex) ? rowIndex : null;
 }
 
 function syncCanvasViewport() {
@@ -4692,7 +4717,7 @@ function onCanvasMouseDown(event: MouseEvent) {
   commitHiddenCanvasEditBeforeCellInteraction();
   if (!item) return;
   if (hit.rowNumber) {
-    handleRowClick(item.displayIndex, item.id, event);
+    beginRowSelection(item.displayIndex, item.id, event);
   } else {
     handleDataCellMousedown(item.displayIndex, hit.visibleColIdx, item.id, event);
   }
@@ -5025,6 +5050,9 @@ const {
   copySelectionCsv,
   copySelectionJson,
   copySelectionSqlInList,
+  copyWithExtractor,
+  previewWithExtractor,
+  canCopyWithExtractor,
   copySelectionAsInsert,
   canCopySelectionAsInsert,
   copySelectedRowsTsv,
@@ -5050,6 +5078,11 @@ const {
 } = useDataGridExport({
   columns: visibleColumns,
   displayItems: visibleDisplayItems,
+  allColumns: computed(() => props.result.columns),
+  allDisplayItems: displayItems,
+  allSourceColumns: computed(() => props.sourceColumns),
+  visibleColumnIndexes,
+  extractorOptions: computed(() => settingsStore.editorSettings.dataGridExtractorOptions),
   sql: computed(() => props.sql),
   exportSql: computed(() => props.exportSql),
   tableMeta: computed(() => (props.tableMeta ? { ...props.tableMeta } : undefined)),
@@ -5065,6 +5098,7 @@ const {
   orderBy: computed(() => currentOrderBy()),
   exportBatchSize: computed(() => settingsStore.editorSettings.exportBatchSize),
   hasCellSelection,
+  hasColumnSelection,
   selectedCells,
   selectedCellMatrix,
   selectedRange,
@@ -5083,6 +5117,61 @@ const {
   exportProgressState,
   exportCancelHandler,
 });
+
+function copyExtractorLabel(extractor: DataGridCopyExtractorId): string {
+  const labels: Record<DataGridCopyExtractorId, string> = {
+    tsv: "TSV",
+    "tsv-with-headers": t("grid.copyExtractorWithHeaders", { format: "TSV" }),
+    csv: "CSV",
+    "csv-with-headers": t("grid.copyExtractorWithHeaders", { format: "CSV" }),
+    "pipe-separated": t("grid.copyExtractorPipeSeparated"),
+    dsv: "DSV",
+    json: "JSON",
+    "json-lines": "JSON Lines",
+    "one-row": t("grid.copyExtractorOneRow"),
+    "sql-in-list": t("grid.copyExtractorSqlInList"),
+    "sql-inserts": t("grid.copyExtractorSqlInserts"),
+    "sql-updates": t("grid.copyExtractorSqlUpdates"),
+    "where-clause": t("grid.copyExtractorWhereClause"),
+    markdown: "Markdown",
+    html: "HTML",
+    xml: "XML",
+    pretty: t("grid.copyExtractorPretty"),
+  };
+  return labels[extractor];
+}
+
+const selectedCopyExtractor = computed(() => settingsStore.editorSettings.dataGridCopyExtractor);
+const extractorConfigOpen = ref(false);
+const extractorMenuItems = computed(() =>
+  DATA_GRID_COPY_EXTRACTOR_IDS.map((extractor) => ({
+    value: extractor,
+    label: copyExtractorLabel(extractor),
+    disabled: extractor === "sql-updates" && (!props.tableMeta?.primaryKeys.length || props.databaseType === "neo4j" || props.databaseType === "tdengine"),
+    separatorBefore: DATA_GRID_COPY_EXTRACTOR_DESCRIPTORS[extractor].separatorBefore,
+  })),
+);
+const copyToolbarCapability = computed<DataGridToolbarCopyCapability>(() => ({
+  label: copyExtractorLabel(selectedCopyExtractor.value),
+  tooltip: `${t("grid.copy")} (${shortcutMod}+C)`,
+  currentValue: selectedCopyExtractor.value,
+  disabled: !canCopyWithExtractor(selectedCopyExtractor.value),
+  items: [...extractorMenuItems.value, { value: "__configure__", label: t("grid.copyExtractorConfigure"), separatorBefore: true }],
+  onCopy: async () => {
+    await copyWithExtractor(selectedCopyExtractor.value);
+  },
+  onSelect: (value) => {
+    if (value === "__configure__") {
+      extractorConfigOpen.value = true;
+      return;
+    }
+    settingsStore.updateEditorSettings({ dataGridCopyExtractor: value as DataGridCopyExtractorId });
+  },
+}));
+
+function saveExtractorConfiguration(value: { extractor: DataGridCopyExtractorId; options: typeof settingsStore.editorSettings.dataGridExtractorOptions }) {
+  settingsStore.updateEditorSettings({ dataGridCopyExtractor: value.extractor, dataGridExtractorOptions: value.options });
+}
 
 const pageSizeMenuItems = computed(() =>
   pageSizeOptions.value.map((size) => ({
@@ -5906,15 +5995,7 @@ async function onGridKeydown(event: KeyboardEvent) {
   if (clipboardShortcut(event, "c")) {
     if (!hasCellSelection.value && !hasRowSelection.value) return;
     event.preventDefault();
-    if (isTransposeMode.value && hasRowSelection.value) {
-      copyRow();
-      return;
-    }
-    if (hasCellSelection.value) {
-      copySelectionTsv();
-    } else {
-      copySelectedRowsTsv();
-    }
+    await copyWithExtractor(selectedCopyExtractor.value);
     return;
   }
   if (clipboardShortcut(event, "a")) {
@@ -7519,6 +7600,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
             :compact="compactDataGridToolbar"
             :refresh="refreshToolbarCapability"
             :auto-refresh="autoRefreshToolbarCapability"
+            :copy-data="copyToolbarCapability"
             :add-row="addRowToolbarCapability"
             :preview="previewToolbarCapability"
             :save="saveToolbarCapability"
@@ -8346,8 +8428,8 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
                   >
                     <div
                       class="data-grid-row-number w-(--row-num-w) shrink-0 px-2 py-1 border-r text-center select-none cursor-default sticky left-0 z-10"
-                      :class="rowNumberStatusClass(item)"
-                      @click="handleRowClick(item.displayIndex, item.id, $event)"
+                      :class="[rowNumberStatusClass(item), { 'data-grid-row-number--selected': isRowSelected(item.id) }]"
+                      @mousedown="beginRowSelection(item.displayIndex, item.id, $event)"
                       @dblclick.stop="toggleTranspose(item.displayIndex)"
                       @contextmenu="onRowContext(item.id, item.displayIndex)"
                     >
@@ -8939,6 +9021,8 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 
     <DataGridBulkEditDialog v-if="bulkEditDialogMounted" v-model:open="bulkEditDialogOpen" v-model:value="bulkEditValue" :selected-cell-count="selectedCellCount" @apply="applyBulkEditValue" />
 
+    <DataGridExtractorDialog v-model:open="extractorConfigOpen" :extractor="selectedCopyExtractor" :options="settingsStore.editorSettings.dataGridExtractorOptions" :items="extractorMenuItems" :preview="previewWithExtractor" @save="saveExtractorConfiguration" />
+
     <Dialog v-model:open="generateIncrementDialogOpen">
       <DialogContent class="sm:max-w-[380px]">
         <DialogHeader>
@@ -9003,11 +9087,12 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
   --data-grid-row-muted-bg: rgb(248, 248, 248);
   --data-grid-row-new-bg: rgb(243, 243, 243);
   --data-grid-row-deleted-bg: rgb(255, 244, 244);
-  --data-grid-cell-active-bg: rgb(232, 232, 232);
+  --data-grid-cell-active-bg: rgb(244, 248, 255);
   --data-grid-cell-dirty-bg: rgb(255, 248, 230);
-  --data-grid-cell-selected-bg: rgb(226, 226, 226);
-  --data-grid-cell-selected-dirty-bg: rgb(244, 229, 186);
-  --data-grid-cell-selected-border: rgb(90, 90, 90);
+  --data-grid-cell-selected-bg: rgb(239, 246, 255);
+  --data-grid-cell-selected-single-bg: rgb(191, 219, 254);
+  --data-grid-cell-selected-dirty-bg: rgb(235, 224, 184);
+  --data-grid-cell-selected-border: rgb(59, 130, 246);
   --data-grid-cell-hover-bg: rgb(245, 245, 245);
   --data-grid-cell-search-bg: rgb(253, 245, 184);
   --data-grid-cell-current-search-bg: rgba(253, 224, 71, 0.52);
@@ -9016,8 +9101,8 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
   --data-grid-row-number-new-bg: rgb(219, 244, 233);
   --data-grid-row-number-edited-bg: rgb(253, 241, 219);
   --data-grid-row-number-deleted-bg: rgb(255, 244, 244);
-  --data-grid-row-number-active-bg: rgb(232, 232, 232);
-  --data-grid-row-number-selected-bg: rgb(226, 226, 226);
+  --data-grid-row-number-active-bg: rgb(244, 248, 255);
+  --data-grid-row-number-selected-bg: rgb(191, 219, 254);
   --data-grid-scrollbar-thumb: color-mix(in oklch, var(--foreground) 30%, transparent);
   --data-grid-scrollbar-thumb-hover: color-mix(in oklch, var(--foreground) 48%, transparent);
   --data-grid-scrollbar-track: transparent;
@@ -9029,11 +9114,12 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
   --data-grid-row-muted-bg: rgb(32, 32, 34);
   --data-grid-row-new-bg: rgb(51, 51, 55);
   --data-grid-row-deleted-bg: rgb(55, 31, 32);
-  --data-grid-cell-active-bg: rgb(64, 64, 64);
+  --data-grid-cell-active-bg: rgb(25, 34, 46);
   --data-grid-cell-dirty-bg: rgb(94, 75, 26);
-  --data-grid-cell-selected-bg: rgb(66, 67, 70);
-  --data-grid-cell-selected-dirty-bg: rgb(94, 75, 26);
-  --data-grid-cell-selected-border: rgb(170, 170, 175);
+  --data-grid-cell-selected-bg: rgb(20, 40, 60);
+  --data-grid-cell-selected-single-bg: rgb(30, 64, 96);
+  --data-grid-cell-selected-dirty-bg: rgb(76, 66, 38);
+  --data-grid-cell-selected-border: rgb(96, 165, 250);
   --data-grid-cell-hover-bg: rgb(46, 47, 51);
   --data-grid-cell-search-bg: rgb(72, 57, 8);
   --data-grid-cell-current-search-bg: rgb(116, 87, 0);
@@ -9042,8 +9128,8 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
   --data-grid-row-number-new-bg: rgb(33, 45, 40);
   --data-grid-row-number-edited-bg: rgb(48, 41, 28);
   --data-grid-row-number-deleted-bg: rgb(55, 31, 32);
-  --data-grid-row-number-active-bg: rgb(64, 64, 64);
-  --data-grid-row-number-selected-bg: rgb(66, 67, 70);
+  --data-grid-row-number-active-bg: rgb(25, 34, 46);
+  --data-grid-row-number-selected-bg: rgb(30, 64, 96);
   --data-grid-scrollbar-thumb: rgb(82, 82, 91);
   --data-grid-scrollbar-thumb-hover: rgb(113, 113, 122);
   --data-grid-scrollbar-track: rgb(24, 24, 27);
@@ -9055,17 +9141,16 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
     --data-grid-row-muted-bg: color-mix(in oklab, var(--muted) 30%, transparent);
     --data-grid-row-new-bg: color-mix(in oklab, var(--primary) 5%, transparent);
     --data-grid-row-deleted-bg: color-mix(in oklab, var(--destructive) 5%, transparent);
-    --data-grid-cell-active-bg: color-mix(in oklab, var(--primary) 15%, transparent);
     --data-grid-cell-dirty-bg: color-mix(in oklab, rgb(240 177 0) 10%, transparent);
-    --data-grid-cell-selected-bg: color-mix(in oklab, var(--primary) 25%, transparent);
-    --data-grid-cell-selected-dirty-bg: color-mix(in oklab, rgb(234 181 50) 30%, color-mix(in oklab, var(--primary) 18%, transparent));
-    --data-grid-cell-selected-border: color-mix(in oklab, var(--primary) 70%, transparent);
+    --data-grid-cell-selected-bg: color-mix(in oklab, rgb(59 130 246) 12%, var(--background));
+    --data-grid-cell-selected-single-bg: color-mix(in oklab, rgb(59 130 246) 30%, var(--background));
+    --data-grid-cell-selected-dirty-bg: color-mix(in oklab, rgb(234 181 50) 30%, color-mix(in oklab, rgb(59 130 246) 18%, var(--background)));
+    --data-grid-cell-selected-border: color-mix(in oklab, rgb(59 130 246) 75%, transparent);
     --data-grid-cell-hover-bg: color-mix(in oklab, var(--accent) 50%, transparent);
     --data-grid-row-number-new-bg: color-mix(in oklab, rgb(16 185 129) 15%, var(--background));
     --data-grid-row-number-edited-bg: color-mix(in oklab, rgb(245 158 11) 15%, var(--background));
     --data-grid-row-number-deleted-bg: color-mix(in oklab, var(--destructive) 15%, var(--background));
-    --data-grid-row-number-active-bg: color-mix(in oklab, var(--primary) 15%, var(--background));
-    --data-grid-row-number-selected-bg: color-mix(in oklab, var(--primary) 25%, var(--background));
+    --data-grid-row-number-selected-bg: color-mix(in oklab, rgb(59 130 246) 30%, var(--background));
   }
 }
 
@@ -9095,14 +9180,15 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 }
 
 .data-grid-header-cell--selected {
-  background-color: rgb(209, 213, 219) !important;
+  background-color: var(--data-grid-cell-selected-single-bg) !important;
 }
 
 :global(.dark) [data-grid-root] {
-  --data-grid-cell-selected-bg: rgb(66, 67, 70);
-  --data-grid-cell-selected-dirty-bg: rgb(94, 75, 26);
-  --data-grid-cell-selected-border: rgb(170, 170, 175);
-  --data-grid-row-number-selected-bg: rgb(66, 67, 70);
+  --data-grid-cell-selected-bg: rgb(20, 40, 60);
+  --data-grid-cell-selected-single-bg: rgb(30, 64, 96);
+  --data-grid-cell-selected-dirty-bg: rgb(76, 66, 38);
+  --data-grid-cell-selected-border: rgb(96, 165, 250);
+  --data-grid-row-number-selected-bg: rgb(30, 64, 96);
 }
 
 [data-grid-root].data-grid--dark .data-grid-header-cell--selected,
@@ -9111,7 +9197,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 :global(.dark) [data-grid-root] .data-grid-header-cell--selected,
 :global(.dark) [data-grid-root] .transpose-record-header-selected,
 :global(.dark) [data-grid-root] .transpose-record-header-active {
-  background-color: rgb(66, 67, 70) !important;
+  background-color: var(--data-grid-cell-selected-single-bg) !important;
   color: rgb(244, 244, 245) !important;
 }
 
@@ -9537,8 +9623,6 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 
 .row-cell-selected {
   background-color: var(--data-grid-cell-selected-bg) !important;
-  outline: 1px solid var(--data-grid-cell-selected-border);
-  outline-offset: -1px;
 }
 
 .cell-dirty {
@@ -9572,8 +9656,6 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 
 .row-cell-selected-dirty {
   background-color: var(--data-grid-cell-selected-dirty-bg) !important;
-  outline: 1px solid var(--data-grid-cell-selected-border);
-  outline-offset: -1px;
 }
 
 .data-grid-row-number.bg-emerald-500\/15 {
@@ -9592,9 +9674,15 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
   background-color: var(--data-grid-row-number-active-bg) !important;
 }
 
+.data-grid-row-number--selected {
+  background-color: var(--data-grid-row-number-selected-bg) !important;
+  color: var(--foreground) !important;
+  box-shadow: inset 3px 0 0 var(--data-grid-cell-selected-border);
+}
+
 .cell-selected {
   color: hsl(var(--foreground));
-  background-color: var(--data-grid-cell-selected-bg) !important;
+  background-color: var(--data-grid-cell-selected-single-bg) !important;
 }
 
 .cell-selected {
@@ -9604,19 +9692,24 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
 :global(.dark) [data-grid-root] .cell-selected,
 :global(.dark) [data-grid-root] .row-cell-selected {
   color: rgb(244, 244, 245) !important;
-  background-color: rgb(66, 67, 70) !important;
+}
+
+:global(.dark) [data-grid-root] .cell-selected {
+  background-color: var(--data-grid-cell-selected-single-bg) !important;
+}
+
+:global(.dark) [data-grid-root] .row-cell-selected {
+  background-color: var(--data-grid-cell-selected-bg) !important;
 }
 
 :global(.dark) [data-grid-root] .cell-selected-dirty,
 :global(.dark) [data-grid-root] .row-cell-selected-dirty {
-  background-color: rgb(94, 75, 26) !important;
+  background-color: var(--data-grid-cell-selected-dirty-bg) !important;
 }
 
 :global(.dark) [data-grid-root] .cell-selected,
-:global(.dark) [data-grid-root] .row-cell-selected,
-:global(.dark) [data-grid-root] .cell-selected-dirty,
-:global(.dark) [data-grid-root] .row-cell-selected-dirty {
-  outline-color: rgb(170, 170, 175) !important;
+:global(.dark) [data-grid-root] .cell-selected-dirty {
+  outline-color: var(--data-grid-cell-selected-border) !important;
 }
 
 .ddl-code :deep(.ddl-kw) {

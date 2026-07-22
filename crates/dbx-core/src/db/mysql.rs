@@ -1633,7 +1633,7 @@ fn should_fallback_empty_list_tables(filter: Option<&str>) -> bool {
     // MySQL proxies such as MyCat can return an empty information_schema.TABLES
     // even when SHOW TABLES exposes objects. Avoid the fallback for active
     // searches so normal MySQL "no match" queries do not rescan large schemas.
-    !filter.is_some_and(|filter| !filter.trim().is_empty())
+    filter.is_none_or(|filter| filter.trim().is_empty())
 }
 
 fn filter_list_tables_fallback(

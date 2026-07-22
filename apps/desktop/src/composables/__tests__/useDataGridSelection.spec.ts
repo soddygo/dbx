@@ -2,7 +2,7 @@ import { computed, ref } from "vue";
 import { describe, expect, it } from "vitest";
 import { useDataGridSelection } from "@/composables/useDataGridSelection";
 
-function createSelection(options?: { getScrollElement?: () => HTMLElement | null; cellFromClientPoint?: (clientX: number, clientY: number) => { rowIndex: number; colIndex: number } | null }) {
+function createSelection(options?: { getScrollElement?: () => HTMLElement | null; cellFromClientPoint?: (clientX: number, clientY: number) => { rowIndex: number; colIndex: number } | null; rowFromClientPoint?: (clientX: number, clientY: number) => number | null }) {
   const columns = computed(() => ["id", "name", "email"]);
   const displayItems = computed(() =>
     [1, 2, 3, 4].map((id, index) => ({
@@ -26,6 +26,7 @@ function createSelection(options?: { getScrollElement?: () => HTMLElement | null
     gridRef: ref(undefined),
     getScrollElement: options?.getScrollElement,
     cellFromClientPoint: options?.cellFromClientPoint,
+    rowFromClientPoint: options?.rowFromClientPoint,
   });
 }
 
@@ -79,7 +80,7 @@ describe("useDataGridSelection", () => {
     expect(selection.selectedCellMatrix.value).toBeNull();
   });
 
-  it("creates a whole-row cell range for contiguous meta row selections", () => {
+  it("keeps contiguous row selections separate from cell ranges", () => {
     const selection = createSelection();
 
     selection.handleRowClick(1, 2, rowEvent({ meta: true }));
@@ -87,13 +88,8 @@ describe("useDataGridSelection", () => {
     selection.handleRowClick(3, 4, rowEvent({ meta: true }));
 
     expect(selection.selectedRowIds.value).toEqual(new Set([2, 3, 4]));
-    expect(selection.selectedRange.value).toEqual({
-      startRow: 1,
-      endRow: 3,
-      startCol: 0,
-      endCol: 2,
-    });
-    expect(selection.hasCellSelection.value).toBe(true);
+    expect(selection.selectedRange.value).toBeNull();
+    expect(selection.hasCellSelection.value).toBe(false);
   });
 
   it("does not create a rectangular cell range for non-contiguous meta row selections", () => {
@@ -105,6 +101,100 @@ describe("useDataGridSelection", () => {
     expect(selection.selectedRowIds.value).toEqual(new Set([1, 3]));
     expect(selection.selectedRange.value).toBeNull();
     expect(selection.hasCellSelection.value).toBe(false);
+  });
+
+  it("replaces disjoint rows with the anchored range on Shift selection", () => {
+    const selection = createSelection();
+
+    selection.handleRowClick(0, 1, rowEvent());
+    selection.handleRowClick(3, 4, rowEvent({ meta: true }));
+    selection.handleRowClick(1, 2, rowEvent({ shift: true }));
+
+    expect(selection.selectedRowIds.value).toEqual(new Set([2, 3, 4]));
+    expect(selection.hasCellSelection.value).toBe(false);
+  });
+
+  it("selects a continuous row range while dragging the row-number gutter", () => {
+    const originalDocument = globalThis.document;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+    const fakeDocument = {
+      addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        const handlers = listeners.get(type) ?? new Set();
+        handlers.add(listener);
+        listeners.set(type, handlers);
+      },
+      removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        listeners.get(type)?.delete(listener);
+      },
+    } as Document;
+    Object.defineProperty(globalThis, "document", { configurable: true, value: fakeDocument });
+    const animationFrames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    }) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+    let pointerRow = 1;
+    const selection = createSelection({ rowFromClientPoint: () => pointerRow });
+
+    try {
+      selection.beginRowSelection(1, 2, { button: 0, clientX: 5, clientY: 10, preventDefault() {} } as MouseEvent);
+      pointerRow = 3;
+      listeners.get("mousemove")?.forEach((listener) => {
+        const event = { clientX: 5, clientY: 80 } as MouseEvent;
+        if (typeof listener === "function") listener(event);
+        else listener.handleEvent(event);
+      });
+      animationFrames.shift()?.(0);
+
+      expect(selection.selectedRowIds.value).toEqual(new Set([2, 3, 4]));
+      expect(selection.hasCellSelection.value).toBe(false);
+    } finally {
+      selection.finishRowSelection();
+      Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
+  });
+
+  it("keeps a meta-deselected row removed after pointer movement", () => {
+    const originalDocument = globalThis.document;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+    const fakeDocument = {
+      addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        const handlers = listeners.get(type) ?? new Set();
+        handlers.add(listener);
+        listeners.set(type, handlers);
+      },
+      removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        listeners.get(type)?.delete(listener);
+      },
+    } as Document;
+    Object.defineProperty(globalThis, "document", { configurable: true, value: fakeDocument });
+    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+    const selection = createSelection({ rowFromClientPoint: () => 1 });
+
+    try {
+      selection.selectedRowIds.value = new Set([1, 2, 3]);
+      selection.beginRowSelection(1, 2, { button: 0, clientX: 5, clientY: 10, metaKey: true, preventDefault() {} } as MouseEvent);
+      listeners.get("mousemove")?.forEach((listener) => {
+        const event = { clientX: 6, clientY: 11 } as MouseEvent;
+        if (typeof listener === "function") listener(event);
+        else listener.handleEvent(event);
+      });
+
+      expect(selection.selectedRowIds.value).toEqual(new Set([1, 3]));
+    } finally {
+      selection.finishRowSelection();
+      Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
   });
 
   it("scrolls and extends the selection while dragging near an edge", () => {

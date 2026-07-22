@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatSelectionAsTsv, summarizeSelection } from "@/lib/dataGrid/gridSelection";
+import { formatSelectionAsCsv, formatSelectionAsTsv, summarizeSelection } from "@/lib/dataGrid/gridSelection";
 
 describe("gridSelection", () => {
   it("formats TSV selections without headers by default", () => {
@@ -27,6 +27,19 @@ describe("gridSelection", () => {
         true,
       ),
     ).toBe("id\tname\n1\tAda\n2\tLin");
+  });
+
+  it("formats RFC-style CSV with optional headers and escaped values", () => {
+    const selection = {
+      columns: ["id", "note"],
+      rows: [
+        [1, 'Ada, said "hello"'],
+        [null, "line one\nline two"],
+      ],
+    };
+
+    expect(formatSelectionAsCsv(selection)).toBe('"id","note"\n"1","Ada, said ""hello"""\n"NULL","line one\nline two"');
+    expect(formatSelectionAsCsv(selection, false)).toBe('"1","Ada, said ""hello"""\n"NULL","line one\nline two"');
   });
 
   it("summarizes empty selections", () => {
