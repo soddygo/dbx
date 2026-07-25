@@ -139,6 +139,12 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
   function canCopyWithExtractor(extractor: DataGridCopyExtractorId): boolean {
     if (hasUnsupportedDiscreteSelection.value) return false;
     if (!options.hasRowSelection.value && !options.hasCellSelection.value) return false;
+    // sql-updates / where-clause emit relational SQL predicates; they are not
+    // meaningful for graph/document/time-series stores that don't speak SQL.
+    const databaseType = options.databaseType.value ?? "";
+    if ((extractor === "sql-updates" || extractor === "where-clause") && (databaseType === "neo4j" || databaseType === "tdengine" || databaseType === "mongodb")) {
+      return false;
+    }
     if (extractor === "sql-inserts") {
       const request = buildRequest(extractor);
       return request !== null && options.canCopySqlInsert(request);

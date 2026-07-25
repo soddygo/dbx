@@ -1241,6 +1241,7 @@ export default withEnglishFallback({
     copyExtractorPipeSeparated: "パイプ区切り",
     copyExtractorPretty: "テーブルテキスト",
     copyExtractorConfigure: "データ抽出の設定…",
+    copyAs: "別形式でコピー",
     copyExtractorFormat: "抽出器",
     copyExtractorColumnSeparator: "列区切り文字",
     copyExtractorRowSeparator: "行区切り文字",

@@ -937,6 +937,7 @@ export default withEnglishFallback({
     copyExtractorPipeSeparated: "竖线分隔",
     copyExtractorPretty: "表格文本",
     copyExtractorConfigure: "配置数据提取器…",
+    copyAs: "复制为",
     copyExtractorFormat: "提取器",
     copyExtractorColumnSeparator: "列分隔符",
     copyExtractorRowSeparator: "行分隔符",

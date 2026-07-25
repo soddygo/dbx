@@ -5202,7 +5202,7 @@ const extractorMenuItems = computed(() =>
   DATA_GRID_COPY_EXTRACTOR_IDS.map((extractor) => ({
     value: extractor,
     label: copyExtractorLabel(extractor),
-    disabled: extractor === "sql-updates" && (!props.tableMeta?.primaryKeys.length || props.databaseType === "neo4j" || props.databaseType === "tdengine"),
+    disabled: ((extractor === "sql-updates" || extractor === "where-clause") && (props.databaseType === "neo4j" || props.databaseType === "tdengine" || props.databaseType === "mongodb")) || (extractor === "sql-updates" && !props.tableMeta?.primaryKeys.length),
     separatorBefore: DATA_GRID_COPY_EXTRACTOR_DESCRIPTORS[extractor].separatorBefore,
   })),
 );
@@ -7497,6 +7497,33 @@ function filterSubmenu(): ContextMenuItem {
   });
 }
 
+function buildExtractorContextItems(): ContextMenuItem[] {
+  const items: ContextMenuItem[] = [];
+  for (const extractor of DATA_GRID_COPY_EXTRACTOR_IDS) {
+    const descriptor = DATA_GRID_COPY_EXTRACTOR_DESCRIPTORS[extractor];
+    if (descriptor.separatorBefore) {
+      items.push({ label: "", separator: true });
+    }
+    const selected = extractor === selectedCopyExtractor.value;
+    items.push({
+      label: `${selected ? "✓ " : ""}${copyExtractorLabel(extractor)}`,
+      action: () => {
+        settingsStore.updateEditorSettings({ dataGridCopyExtractor: extractor });
+        void copyWithExtractor(extractor);
+      },
+      disabled: !canCopyWithExtractor(extractor),
+    });
+  }
+  items.push({ label: "", separator: true });
+  items.push({
+    label: t("grid.copyExtractorConfigure"),
+    action: () => {
+      extractorConfigOpen.value = true;
+    },
+  });
+  return items;
+}
+
 function copySubmenu(): ContextMenuItem {
   const labels = copyRowLabels();
   const items: ContextMenuItem[] = [];
@@ -7537,6 +7564,8 @@ function copySubmenu(): ContextMenuItem {
   }
   items.push({ label: t("grid.copyAll"), action: copyAll });
   items.push({ label: t("grid.copyColumnNames"), action: openCopyAllColumnNamesDialog });
+  items.push({ label: "", separator: true });
+  items.push({ label: t("grid.copyAs"), children: buildExtractorContextItems() });
   return { label: t("grid.copy"), icon: Copy, children: items };
 }
 
