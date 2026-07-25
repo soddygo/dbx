@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { Database } from "@lucide/vue";
+import { useTheme } from "@/composables/useTheme";
 import { webPath } from "@/lib/common/webPath";
 
 const props = defineProps<{
   dbType: string;
 }>();
+const { isDark } = useTheme();
 
 const assetIcons: Record<string, string> = {
   mysql: "mysql",
   postgres: "postgres",
   postgresql: "postgres",
+  cloudberry: "cloudberry.png",
   sqlite: "sqlite",
   rqlite: "rqlite.png",
   turso: "turso.png",
@@ -37,6 +40,7 @@ const assetIcons: Record<string, string> = {
   kwdb: "kwdb",
   kingbase: "kingbase",
   highgo: "highgo.png",
+  uxdb: "uxdb",
   goldendb: "goldendb.png",
   databend: "databend",
   vastbase: "vastbase.png",
@@ -105,6 +109,7 @@ const normalizedType = computed(() => props.dbType.toLowerCase().replace(/[\s-]+
 const assetName = computed(() => assetIcons[normalizedType.value]);
 const assetSrc = computed(() => {
   if (!assetName.value) return "";
+  if (normalizedType.value === "uxdb" && isDark.value) return webPath("/icons/database/uxdb-dark.svg");
   return webPath(assetName.value.includes(".") ? `/icons/database/${assetName.value}` : `/icons/database/${assetName.value}.svg`);
 });
 const letter = computed(() => letterIcons[normalizedType.value]);

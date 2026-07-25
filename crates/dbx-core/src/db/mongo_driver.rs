@@ -12,15 +12,9 @@ use futures::{io::AsyncReadExt, io::AsyncWriteExt, TryStreamExt};
 use percent_encoding::percent_decode_str;
 use std::{collections::HashSet, time::Duration};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MongoDocumentResult {
-    pub documents: Vec<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raw_documents: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extended_documents: Option<Vec<serde_json::Value>>,
-    pub total: u64,
-}
+pub use super::document_result::DocumentQueryResult;
+/// Backward-compatible name for callers of Mongo-specific APIs.
+pub type MongoDocumentResult = DocumentQueryResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MongoDropIndexesResult {
@@ -673,10 +667,16 @@ pub async fn find_documents(
     while cursor.advance().await.map_err(|e| e.to_string())? {
         let doc = cursor.deserialize_current().map_err(|e| e.to_string())?;
         documents.push(bson_to_json(&Bson::Document(doc.clone())));
-        extended_documents.push(Bson::Document(doc).into_relaxed_extjson());
+        extended_documents.push(Bson::Document(doc).into_canonical_extjson());
     }
 
-    Ok(MongoDocumentResult { documents, raw_documents: None, extended_documents: Some(extended_documents), total })
+    Ok(MongoDocumentResult {
+        documents,
+        raw_documents: None,
+        extended_documents: Some(extended_documents),
+        total,
+        total_is_exact: true,
+    })
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -807,12 +807,21 @@ pub async fn find_documents_extended_json(
     let mut cursor = find.await.map_err(|e| e.to_string())?;
 
     let mut documents = Vec::new();
+    let mut extended_documents = Vec::new();
     while cursor.advance().await.map_err(|e| e.to_string())? {
         let doc = cursor.deserialize_current().map_err(|e| e.to_string())?;
-        documents.push(bson_to_browser_json(&Bson::Document(doc)));
+        let (document, extended_document) = document_json_views(doc);
+        documents.push(document);
+        extended_documents.push(extended_document);
     }
 
-    Ok(MongoDocumentResult { extended_documents: Some(documents.clone()), documents, raw_documents: None, total })
+    Ok(MongoDocumentResult {
+        extended_documents: Some(extended_documents),
+        documents,
+        raw_documents: None,
+        total,
+        total_is_exact: true,
+    })
 }
 
 /// Run `db.collection.aggregate(pipeline, options)`.
@@ -858,6 +867,7 @@ pub async fn aggregate_documents(
             raw_documents: None,
             extended_documents: Some(vec![extended]),
             total: 1,
+            total_is_exact: true,
         });
     }
 
@@ -909,7 +919,13 @@ async fn drain_document_cursor(
         documents.truncate(max_rows);
         extended_documents.truncate(max_rows);
     }
-    Ok(MongoDocumentResult { documents, raw_documents: None, extended_documents: Some(extended_documents), total })
+    Ok(MongoDocumentResult {
+        documents,
+        raw_documents: None,
+        extended_documents: Some(extended_documents),
+        total,
+        total_is_exact: true,
+    })
 }
 
 fn parse_aggregate_options_document(options_json: Option<&str>) -> Result<Document, String> {
@@ -963,7 +979,13 @@ pub async fn distinct(
     let extended_documents = values.into_iter().map(|value| value.into_relaxed_extjson()).collect::<Vec<_>>();
     let total = documents.len() as u64;
 
-    Ok(MongoDocumentResult { documents, raw_documents: None, extended_documents: Some(extended_documents), total })
+    Ok(MongoDocumentResult {
+        documents,
+        raw_documents: None,
+        extended_documents: Some(extended_documents),
+        total,
+        total_is_exact: true,
+    })
 }
 
 pub async fn create_index(
@@ -1327,14 +1349,16 @@ fn single_document_result(document: Option<Document>) -> MongoDocumentResult {
         Some(document) => MongoDocumentResult {
             documents: vec![bson_to_json(&Bson::Document(document.clone()))],
             raw_documents: None,
-            extended_documents: Some(vec![Bson::Document(document).into_relaxed_extjson()]),
+            extended_documents: Some(vec![Bson::Document(document).into_canonical_extjson()]),
             total: 1,
+            total_is_exact: true,
         },
         None => MongoDocumentResult {
             documents: Vec::new(),
             raw_documents: None,
             extended_documents: Some(Vec::new()),
             total: 0,
+            total_is_exact: true,
         },
     }
 }
@@ -1561,6 +1585,14 @@ fn bson_to_browser_json(bson: &Bson) -> serde_json::Value {
         ),
         _ => bson_to_json(bson),
     }
+}
+
+fn document_json_views(document: Document) -> (serde_json::Value, serde_json::Value) {
+    let bson = Bson::Document(document);
+    let browser = bson_to_browser_json(&bson);
+    // Derive copy JSON from the original BSON so every BSON type keeps its canonical wrapper.
+    let extended = bson.into_canonical_extjson();
+    (browser, extended)
 }
 
 /// Convert a `serde_json::Value` (JSON object) to a BSON `Document`,
@@ -2250,8 +2282,38 @@ mod tests {
 
         assert_eq!(result.documents[0]["lastUpdatedDate"], serde_json::json!("ISODate(\"2025-05-06T08:35:32Z\")"));
         let extended = result.extended_documents.expect("extended documents");
-        assert_eq!(extended[0]["lastUpdatedDate"], serde_json::json!({ "$date": "2025-05-06T08:35:32Z" }));
+        assert_eq!(extended[0]["lastUpdatedDate"], serde_json::json!({ "$date": { "$numberLong": "1746520532000" } }));
         assert_eq!(extended[0]["dateText"], serde_json::json!("ISODate(\"2025-05-06T08:35:32Z\")"));
+    }
+
+    #[test]
+    fn document_json_views_keep_browser_display_and_canonical_bson_types() {
+        let date = DateTime::parse_rfc3339_str("2026-06-10T13:59:31.287Z").unwrap();
+        let (browser, extended) = document_json_views(doc! {
+            "date": date,
+            "int32": Bson::Int32(42),
+            "int64": Bson::Int64(42),
+            "unsafeInt64": Bson::Int64(2_326_645_729_978_441_729),
+        });
+
+        assert_eq!(
+            browser,
+            serde_json::json!({
+                "date": "ISODate(\"2026-06-10T13:59:31.287Z\")",
+                "int32": 42,
+                "int64": 42,
+                "unsafeInt64": { "$numberLong": "2326645729978441729" },
+            })
+        );
+        assert_eq!(
+            extended,
+            serde_json::json!({
+                "date": { "$date": { "$numberLong": "1781099971287" } },
+                "int32": { "$numberInt": "42" },
+                "int64": { "$numberLong": "42" },
+                "unsafeInt64": { "$numberLong": "2326645729978441729" },
+            })
+        );
     }
 
     #[test]

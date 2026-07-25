@@ -23,6 +23,14 @@ const editorSettings = {
   autoCalculateTotalRows: false,
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 vi.mock("@/lib/backend/api", () => ({
   analyzeEditableQueryEditability,
   buildDataGridCountSql,
@@ -136,6 +144,32 @@ describe("queryStore hidden primary key editing", () => {
     await vi.waitFor(() => expect(tab.querySourceColumns).toEqual(["name", "id"]));
     expect(tab.tableMeta?.database).toBe("app");
     expect(tab.queryEditabilityReason).toBeUndefined();
+  });
+
+  it("keeps insert disabled when a MySQL table has a physical primary key named like DBX ROWID", async () => {
+    getColumns.mockResolvedValue([
+      { name: "__DBX_ROWID", data_type: "varchar", is_nullable: false, column_default: null, is_primary_key: true, extra: null },
+      { name: "name", data_type: "varchar", is_nullable: true, column_default: null, is_primary_key: false, extra: null },
+    ]);
+    analyzeEditableQueryEditability.mockImplementation(async (sql: string) => ({
+      editable: true,
+      analysis: {
+        schema: undefined,
+        tableName: "users",
+        selectStar: false,
+        columns: [{ sourceName: "name", resultName: "name", expression: "name" }, ...(sql.includes("__DBX_PK_0") ? [{ sourceName: "__DBX_ROWID", resultName: "__DBX_PK_0", expression: "`__DBX_ROWID`" }] : [])],
+      },
+    }));
+
+    const { useQueryStore } = await import("@/stores/queryStore");
+    const store = useQueryStore();
+    const tabId = store.createTab("mysql-1", "app", "Query");
+
+    await store.executeTabSql(tabId, "SELECT name FROM users");
+
+    const tab = store.tabs.find((item) => item.id === tabId)!;
+    await vi.waitFor(() => expect(tab.querySourceColumns).toEqual(["name", "__DBX_ROWID"]));
+    expect(tab.queryAnalysis?.allowInsert).toBe(false);
   });
 
   it("uses the connection default database for SQL library tabs without a saved database", async () => {
@@ -258,7 +292,7 @@ describe("queryStore hidden primary key editing", () => {
     await vi.waitFor(() => expect(tab.querySourceColumns).toEqual(["ID", "PLATFORM", "__DBX_ROWID"]));
     expect(tab.tableMeta?.primaryKeys).toEqual(["__DBX_ROWID"]);
     expect(tab.queryAnalysis).toBeDefined();
-    expect(tab.queryAnalysis?.allowInsert).toBe(false);
+    expect(tab.queryAnalysis?.allowInsert).not.toBe(false);
     expect(tab.queryEditabilityReason).toBeUndefined();
   });
 
@@ -291,9 +325,48 @@ describe("queryStore hidden primary key editing", () => {
     await store.executeTabSql(tabId, "SELECT * FROM aa");
 
     expect(getColumns).toHaveBeenCalledWith("oracle-1", "ORCL", "", "AA", undefined);
-    expect(listIndexes).not.toHaveBeenCalled();
+    expect(listIndexes).toHaveBeenCalledWith("oracle-1", "ORCL", "", "AA", undefined);
     expect(listObjects).not.toHaveBeenCalled();
     expect(executeMulti).toHaveBeenCalledWith("oracle-1", "ORCL", "SELECT * FROM aa", undefined, expect.any(String), expect.objectContaining({ timeoutSecs: 30 }));
+  });
+
+  it("starts an Oracle primary-key star query before slow column metadata finishes", async () => {
+    const columnsGate = deferred<Awaited<ReturnType<typeof getColumns>>>();
+    getConnectionConfig.mockReturnValue({ id: "oracle-1", name: "Oracle", db_type: "oracle", database: "ORCL", query_timeout_secs: 30 });
+    getColumns.mockReturnValue(columnsGate.promise);
+    listIndexes.mockResolvedValue([{ name: "PK_WIDE_TABLE", columns: ["ID"], is_unique: true, is_primary: true }]);
+    analyzeEditableQueryEditability.mockImplementation(async () => ({
+      editable: true,
+      analysis: {
+        schema: "APP",
+        tableName: "WIDE_TABLE",
+        tableAlias: "t",
+        selectStar: true,
+        columns: [],
+      },
+    }));
+    executeMulti.mockResolvedValue([
+      {
+        columns: ["ID", "NAME"],
+        rows: [[1, "Alice"]],
+        affected_rows: 0,
+        execution_time_ms: 312,
+      },
+    ]);
+
+    const { useQueryStore } = await import("@/stores/queryStore");
+    const store = useQueryStore();
+    const tabId = store.createTab("oracle-1", "ORCL", "Query");
+
+    const execution = store.executeTabSql(tabId, "SELECT t.* FROM APP.WIDE_TABLE t");
+    await vi.waitFor(() => expect(executeMulti).toHaveBeenCalled());
+    expect(executeMulti).toHaveBeenCalledWith("oracle-1", "ORCL", "SELECT t.* FROM APP.WIDE_TABLE t", undefined, expect.any(String), expect.objectContaining({ timeoutSecs: 30 }));
+
+    columnsGate.resolve([
+      { name: "ID", data_type: "NUMBER", is_nullable: false, column_default: null, is_primary_key: true, extra: null },
+      { name: "NAME", data_type: "VARCHAR2(100)", is_nullable: true, column_default: null, is_primary_key: false, extra: null },
+    ]);
+    await execution;
   });
 
   it("keeps a keyless Oracle query editable when its WHERE clause reads another table", async () => {

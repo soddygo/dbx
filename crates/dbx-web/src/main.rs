@@ -330,6 +330,9 @@ async fn main() {
         .route("/schema/indexes", get(routes::schema::list_indexes))
         .route("/schema/foreign-keys", get(routes::schema::list_foreign_keys))
         .route("/schema/triggers", get(routes::schema::list_triggers))
+        .route("/schema/constraints", get(routes::schema::list_constraints))
+        .route("/schema/partitions", get(routes::schema::list_partitions))
+        .route("/schema/subpartitions", get(routes::schema::list_subpartitions))
         .route("/schema/functions", get(routes::schema::list_functions))
         .route("/schema/sequences", get(routes::schema::list_sequences))
         .route("/schema/rules", get(routes::schema::list_rules))
@@ -499,6 +502,8 @@ async fn main() {
         .route("/nacos/configs/history/list", post(routes::nacos::list_config_history))
         .route("/nacos/configs/history/get", post(routes::nacos::get_config_history))
         .route("/nacos/configs/history/rollback", post(routes::nacos::rollback_config))
+        .route("/nacos/rnacos-console/captcha", post(routes::nacos::get_rnacos_console_captcha))
+        .route("/nacos/rnacos-console/login", post(routes::nacos::login_rnacos_console))
         .route("/nacos/services/list", post(routes::nacos::list_services))
         .route("/nacos/instances/list", post(routes::nacos::list_instances))
         .route("/nacos/instances/update", post(routes::nacos::update_instance))
@@ -514,6 +519,10 @@ async fn main() {
         .route("/document-store/list-databases", post(routes::document_store::list_databases))
         .route("/document-store/list-collections", post(routes::document_store::list_collections))
         .route("/document-store/find-documents", post(routes::document_store::find_documents))
+        .route(
+            "/document-store/elasticsearch-count-documents",
+            post(routes::document_store::elasticsearch_count_documents),
+        )
         .route("/document-store/list-gridfs-buckets", post(routes::document_store::list_gridfs_buckets))
         .route("/document-store/create-gridfs-bucket", post(routes::document_store::create_gridfs_bucket))
         .route("/document-store/delete-gridfs-bucket", post(routes::document_store::delete_gridfs_bucket))
@@ -615,7 +624,11 @@ async fn main() {
         )
         .route("/export/query-result/cancel", post(routes::query_result_export::cancel_query_result_export))
         // SQL file
-        .route("/sql-file/preview", post(routes::sql_file::preview_sql_file))
+        .route(
+            "/sql-file/preview",
+            post(routes::sql_file::preview_sql_file)
+                .layer(DefaultBodyLimit::max(routes::sql_file::SQL_FILE_UPLOAD_MAX_BYTES.saturating_add(1024 * 1024))),
+        )
         .route("/sql-file/execute", post(routes::sql_file::execute_sql_file))
         .route("/sql-file/progress/{executionId}", get(routes::sql_file::sql_file_progress))
         .route("/sql-file/cancel", post(routes::sql_file::cancel_sql_file))
@@ -640,6 +653,10 @@ async fn main() {
         .route(
             "/app-settings/mcp-policy",
             get(routes::app_settings::load_mcp_global_policy).put(routes::app_settings::save_mcp_global_policy),
+        )
+        .route(
+            "/app-settings/max-agent-turns",
+            get(routes::app_settings::load_max_agent_turns).put(routes::app_settings::save_max_agent_turns),
         )
         .route("/app-settings/config/decrypt", post(routes::app_settings::decrypt_config))
         // Cloud sync

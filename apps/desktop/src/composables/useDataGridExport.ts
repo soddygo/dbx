@@ -15,7 +15,7 @@ import { formatSqlInsert, formatTsv } from "@/lib/export/exportFormats";
 import { uuid } from "@/lib/common/utils";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { expandNestedJsonStringsForCopy } from "@/lib/common/jsonCopyValue";
-import { buildMongoCopyDocumentFromOriginal, buildMongoCopyInsertDocument, formatMongoShellLiteral, type MongoInputValue } from "@/lib/mongo/mongoDocumentValues";
+import { buildMongoCopyDocumentFromOriginal, buildMongoCopyInsertDocument, buildMongoCopyUpdateDocument, formatMongoShellLiteral, type MongoInputValue } from "@/lib/mongo/mongoDocumentValues";
 import { formatMongoShellText } from "@/lib/mongo/mongoFormatter";
 import type { DatabaseType, QueryResult } from "@/types/database";
 import type { QueryResultExportRequest } from "@/lib/backend/api";
@@ -53,6 +53,11 @@ interface RowItem {
   status: string;
 }
 
+export interface MongoCopyUpdateTarget {
+  collection: string;
+  idColumn: "_id";
+}
+
 export interface UseDataGridExportOptions {
   columns: ComputedRef<string[]>;
   displayItems: ComputedRef<RowItem[]>;
@@ -65,6 +70,7 @@ export interface UseDataGridExportOptions {
   exportSql?: ComputedRef<string | undefined>;
   tableMeta: ComputedRef<DataGridTableMeta | undefined>;
   copyInsertTargetLabel?: ComputedRef<string | undefined>;
+  mongoUpdateTarget?: ComputedRef<MongoCopyUpdateTarget | undefined>;
   databaseType: ComputedRef<DatabaseType | undefined>;
   connectionId: ComputedRef<string | undefined>;
   database: ComputedRef<string | undefined>;
@@ -200,6 +206,7 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     exportSql: resultExportSql,
     tableMeta,
     copyInsertTargetLabel,
+    mongoUpdateTarget,
     sourceColumns,
     databaseType,
     connectionId,
@@ -352,6 +359,10 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     return item ? [item] : [];
   }
 
+  function updateEligibleRows(): RowItem[] {
+    return updateTargetRows().filter((item) => !item.isNew && !item.isDraft && !item.isDeleted);
+  }
+
   function updateCopyData(): CopyUpdateData | null {
     const currentTableMeta = tableMeta.value;
     if (!currentTableMeta?.primaryKeys.length) return null;
@@ -399,6 +410,28 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
       sourceColumns: data.sourceColumns ?? null,
       rows,
     });
+  }
+
+  function buildMongoCopyUpdateStatements(rows: RowItem[], target: MongoCopyUpdateTarget): string[] {
+    const documents = options.mongoDocuments?.value;
+    if (!documents) return [];
+
+    const copyColumns = effectiveColumns(sourceColumns.value, columns.value).map((column) => column ?? "");
+    const statements: string[] = [];
+    for (const item of rows) {
+      if (item.sourceIndex === undefined) continue;
+      const originalDocument = documents[item.sourceIndex];
+      if (!originalDocument || typeof originalDocument !== "object" || Array.isArray(originalDocument)) continue;
+
+      const source = originalDocument as Record<string, unknown>;
+      if (!Object.prototype.hasOwnProperty.call(source, target.idColumn)) continue;
+      const update = buildMongoCopyUpdateDocument(item.data as MongoInputValue[], copyColumns, item.isDirtyCol, originalDocument, target.idColumn);
+      if (!update) continue;
+
+      const statement = `db.getCollection(${JSON.stringify(target.collection)}).updateOne({${JSON.stringify(target.idColumn)}:${formatMongoShellLiteral(source[target.idColumn])}},${formatMongoShellLiteral(update)});`;
+      statements.push(formatMongoCopyStatement(statement) ?? statement);
+    }
+    return statements;
   }
 
   function insertCopyKey(excludePrimaryKeys: boolean, insertMode: DataGridCopyInsertMode): string {
@@ -499,7 +532,7 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
 
   async function buildCopyInsertStatement(data: CopyInsertData, excludePrimaryKeys: boolean, insertMode: DataGridCopyInsertMode): Promise<string | undefined> {
     if (databaseType.value === "mongodb") {
-      return formatMongoCopyInsertStatement(
+      return formatMongoCopyStatement(
         buildMongoCopyInsertStatement({
           collection: copyInsertTargetLabel?.value || tableMeta.value?.tableName || "collection",
           columns: data.columns,
@@ -706,6 +739,25 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
   }
 
   async function prepareRowAsUpdateStatement(): Promise<string | undefined> {
+    const rows = updateEligibleRows();
+    if (!rows.length) {
+      setUpdateCopyCache({
+        key: "",
+        text: "",
+        loading: false,
+        ready: false,
+      });
+      return;
+    }
+
+    if (databaseType.value === "mongodb") {
+      const target = mongoUpdateTarget?.value;
+      if (!target) return;
+      await yieldToMainThread();
+      const text = buildMongoCopyUpdateStatements(rows, target).join("\n");
+      return text || undefined;
+    }
+
     const currentTableMeta = tableMeta.value;
     if (!currentTableMeta?.primaryKeys.length) {
       setUpdateCopyCache({
@@ -834,11 +886,6 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     await copyText(formatSelectionAsTsv({ columns: columns.value, rows }, true), { rows, includeHeader: true });
   }
 
-  async function copyColumnNames() {
-    if (columns.value.length === 0) return;
-    await copyText(columns.value.join("\t"));
-  }
-
   function rowToJsonObject(item: RowItem): Record<string, unknown> {
     if (options.databaseType.value === "mongodb" && item.sourceIndex !== undefined) {
       const original = options.mongoDocuments?.value?.[item.sourceIndex];
@@ -904,6 +951,15 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
   }
 
   const canCopyRowAsUpdate = computed(() => {
+    const rows = updateEligibleRows();
+    if (!rows.length) return false;
+    if (databaseType.value === "mongodb") {
+      const target = mongoUpdateTarget?.value;
+      if (!target || !options.mongoDocuments?.value || rows.some((item) => item.sourceIndex === undefined)) return false;
+      const saveColumns = effectiveColumns(sourceColumns.value, columns.value);
+      if (findColumnIndex(saveColumns, target.idColumn) === -1) return false;
+      return saveColumns.some((column) => column && normalizeColumnName(column) !== normalizeColumnName(target.idColumn));
+    }
     if (databaseType.value === "neo4j" || databaseType.value === "tdengine") return false;
     return updateCopyData() !== null;
   });
@@ -1563,7 +1619,7 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     columnTypes?: Array<string | undefined>;
     rows: CellValue[][];
   } {
-    const exportColumns = tableMeta.value ? effectiveColumns(sourceColumns.value, result.columns) : result.columns;
+    const exportColumns = context.value === "table-data" && tableMeta.value ? effectiveColumns(sourceColumns.value, result.columns) : result.columns;
     const columnIndexes = exportColumns.map((column, index) => ({ column, index })).filter((item): item is { column: string; index: number } => !!item.column);
     const exportColumnTypes = columnTypes.value?.length === result.columns.length ? columnTypes.value : undefined;
     return {
@@ -1610,7 +1666,6 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     selectionInsertRowCount,
     copySelectedRowsTsv,
     copySelectedRowsTsvWithHeaders,
-    copyColumnNames,
     exportCsv,
     exportCurrentPageCsv,
     exportJson,
@@ -1696,7 +1751,7 @@ function buildMongoCopyInsertStatement(options: { collection: string; columns: s
   return `${collection}.insertMany(${formatMongoShellLiteral(documents)});`;
 }
 
-function formatMongoCopyInsertStatement(statement: string | undefined): string | undefined {
+function formatMongoCopyStatement(statement: string | undefined): string | undefined {
   if (!statement) return undefined;
   try {
     return formatMongoShellText(statement);

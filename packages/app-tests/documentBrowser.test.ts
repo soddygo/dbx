@@ -28,6 +28,7 @@ test("mongo document table passes copy context to the data grid", () => {
   assert.match(source, /const customSaveHandler = computed<CustomSaveHandler>\(\(\) => \(\{[\s\S]*?targetLabel: props\.collection,[\s\S]*?\}\)\);/);
   assert.match(source, /mongo_copy_documents: copyDocuments\.value/);
   assert.match(source, /result\.extended_documents\?\.length === nextDocuments\.length/);
+  assert.match(source, /props\.databaseType === "mongodb" && mongoCopyDocumentsAvailable\.value/);
 });
 
 test("document edit mode toggles whole JSON editing for insert and save", () => {
@@ -60,4 +61,10 @@ test("document save uses shared identity plan and write helpers", () => {
   // No local rekey/replace triple-copy orchestration.
   assert.doesNotMatch(source, /async function rekeyDocumentStoreDocument/);
   assert.doesNotMatch(source, /async function replaceDocumentStoreDocument/);
+});
+
+test("document query inputs apply on Enter and reserve Shift+Enter for newlines", () => {
+  const source = documentBrowserSource();
+  assert.equal(source.match(/@keydown\.enter\.exact\.prevent="applyFilter"/g)?.length, 2);
+  assert.doesNotMatch(source, /@keydown\.shift\.enter\.prevent="applyFilter"/);
 });

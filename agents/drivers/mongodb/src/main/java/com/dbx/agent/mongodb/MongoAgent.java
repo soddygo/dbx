@@ -641,12 +641,9 @@ public final class MongoAgent {
             return stringId;
         }
         String trimmed = id.trim();
-        if (isNumberLongIdWrapper(trimmed)) {
-            try {
-                return Document.parse("{\"_id\":" + trimmed + "}").get("_id");
-            } catch (Exception e) {
-                // Fall through to the legacy ObjectId/string handling below.
-            }
+        Object extendedJsonId = parseExtendedJsonId(trimmed);
+        if (extendedJsonId != null) {
+            return extendedJsonId;
         }
         try {
             return new ObjectId(id);
@@ -668,20 +665,21 @@ public final class MongoAgent {
         }
     }
 
-    private static boolean isNumberLongIdWrapper(String value) {
+    private static Object parseExtendedJsonId(String value) {
         try {
             JsonElement parsed = JsonParser.parseString(value);
             if (!parsed.isJsonObject()) {
-                return false;
+                return null;
             }
             JsonObject wrapper = parsed.getAsJsonObject();
-            JsonElement numberLong = wrapper.get("$numberLong");
-            return wrapper.size() == 1
-                && numberLong != null
-                && numberLong.isJsonPrimitive()
-                && numberLong.getAsJsonPrimitive().isString();
+            if (wrapper.size() != 1 || (!wrapper.has("$oid") && !wrapper.has("$numberLong"))) {
+                return null;
+            }
+            // The document browser preserves BSON _id types as Extended JSON;
+            // decode only known wrappers so JSON-looking string IDs stay strings.
+            return Document.parse("{\"_id\":" + value + "}").get("_id");
         } catch (Exception e) {
-            return false;
+            return null;
         }
     }
 
@@ -698,7 +696,20 @@ public final class MongoAgent {
         var result = isUpdateOperatorDocument(newDoc)
             ? col.updateOne(filter, newDoc)
             : col.replaceOne(filter, replacementDocument(newDoc));
+        requireMatchedDocument(id, result);
         return Collections.singletonMap("modified_count", result.getModifiedCount());
+    }
+
+    static void requireMatchedDocument(String id, UpdateResult result) {
+        if (result.getMatchedCount() == 0) {
+            throw new IllegalStateException(noMatchingDocumentError(id));
+        }
+    }
+
+    private static String noMatchingDocumentError(String id) {
+        String display = decodeStringDocumentId(id);
+        return "No document matched _id " + (display == null ? id : display)
+            + ". It may have been deleted or its _id changed since the query ran.";
     }
 
     private static Object updateDocuments(JsonObject params) {
@@ -857,7 +868,36 @@ public final class MongoAgent {
     }
 
     static JsonObject bsonToExtendedJson(Document doc) {
-        return JsonParser.parseString(doc.toJson(EXTENDED_JSON_SETTINGS)).getAsJsonObject();
+        JsonObject relaxed = JsonParser.parseString(doc.toJson(EXTENDED_JSON_SETTINGS)).getAsJsonObject();
+        return preserveUnsafeLongsForJsonClients(doc, relaxed).getAsJsonObject();
+    }
+
+    private static JsonElement preserveUnsafeLongsForJsonClients(Object bsonValue, JsonElement relaxedValue) {
+        if (
+            bsonValue instanceof Long longValue &&
+            (longValue < -JS_MAX_SAFE_INTEGER || longValue > JS_MAX_SAFE_INTEGER)
+        ) {
+            JsonObject wrapper = new JsonObject();
+            wrapper.addProperty("$numberLong", longValue.toString());
+            return wrapper;
+        }
+        if (bsonValue instanceof Document document && relaxedValue.isJsonObject()) {
+            JsonObject object = relaxedValue.getAsJsonObject();
+            for (Map.Entry<String, Object> entry : document.entrySet()) {
+                if (object.has(entry.getKey())) {
+                    object.add(
+                        entry.getKey(),
+                        preserveUnsafeLongsForJsonClients(entry.getValue(), object.get(entry.getKey()))
+                    );
+                }
+            }
+        } else if (bsonValue instanceof List<?> values && relaxedValue.isJsonArray()) {
+            JsonArray array = relaxedValue.getAsJsonArray();
+            for (int index = 0; index < Math.min(values.size(), array.size()); index++) {
+                array.set(index, preserveUnsafeLongsForJsonClients(values.get(index), array.get(index)));
+            }
+        }
+        return relaxedValue;
     }
 
     static Object convertValue(Object value) {
