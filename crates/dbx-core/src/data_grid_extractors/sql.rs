@@ -4,12 +4,11 @@ use super::{
     DATA_GRID_EXTRACTOR_MAX_OUTPUT_BYTES,
 };
 use crate::data_grid_sql::{
-    build_data_grid_context_filter_condition, build_data_grid_copy_insert_statement,
-    build_data_grid_copy_update_statements, format_grid_sql_literal, is_auto_generated_column,
-    is_grid_insert_omitted_column, is_non_identity_generated_column, DataGridContextFilterConditionOptions,
-    DataGridContextFilterMode, DataGridCopyInsertStatementOptions, DataGridCopyUpdateStatementOptions,
-    DataGridTableMeta,
+    build_column_predicate, build_data_grid_copy_insert_statement, build_data_grid_copy_update_statements,
+    format_grid_sql_literal, is_auto_generated_column, is_grid_insert_omitted_column, is_non_identity_generated_column,
+    DataGridCopyInsertStatementOptions, DataGridCopyUpdateStatementOptions, DataGridTableMeta,
 };
+use crate::models::connection::DatabaseType;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::io::Write;
@@ -268,6 +267,19 @@ pub(super) fn write_where_clause(
     context: &ExtractContext<'_>,
     output: &mut dyn Write,
 ) -> Result<(), DataGridExtractError> {
+    // WHERE-clause extraction emits relational SQL predicates and is not meaningful
+    // for graph/document/time-series stores. Unlike `write_sql_updates`, this
+    // intentionally does NOT auto-append primary keys: the predicate reflects the
+    // exact cells the user selected.
+    if matches!(
+        context.request.database_type,
+        Some(DatabaseType::Neo4j | DatabaseType::Tdengine | DatabaseType::MongoDb)
+    ) {
+        return Err(DataGridExtractError::new(
+            DataGridExtractErrorCode::UnsupportedDatabase,
+            "WHERE-clause extraction is not supported for this database type.",
+        ));
+    }
     for (row_index, row) in context.request.rows.iter().enumerate() {
         if row_index > 0 {
             write_bytes(output, b" OR ")?;
@@ -282,22 +294,16 @@ pub(super) fn write_where_clause(
             let column = context.selected_columns[column_index];
             let value = &row[*source_index];
             let source_name = column.source_name.as_deref().unwrap_or(&column.display_name);
-            let predicate = build_data_grid_context_filter_condition(DataGridContextFilterConditionOptions {
-                database_type: context.request.database_type,
-                identifier_quote: None,
-                column_name: source_name.to_string(),
-                mode: DataGridContextFilterMode::Equals,
-                value: (*value).clone(),
-                values: Vec::new(),
-                end_value: None,
-                column_info: context.selected_column_info[column_index].cloned(),
-            })
-            .ok_or_else(|| {
-                DataGridExtractError::new(
-                    DataGridExtractErrorCode::UnsupportedDatabase,
-                    format!("Cannot build a WHERE predicate for column '{source_name}'."),
-                )
-            })?;
+            // Reuse the UPDATE predicate builder so NULL -> IS NULL, MySQL BINARY,
+            // and MySQL JSON CAST(...) stay consistent with copy-as-UPDATE.
+            let predicate = build_column_predicate(
+                context.request.database_type,
+                source_name,
+                value,
+                context.selected_column_info[column_index],
+                true,
+                None,
+            );
             write_bytes(output, predicate.as_bytes())?;
         }
         if context.request.rows.len() > 1 {

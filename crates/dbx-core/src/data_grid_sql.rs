@@ -295,7 +295,7 @@ pub fn prepare_data_grid_save(options: DataGridSaveStatementOptions) -> DataGrid
 }
 
 pub fn build_data_grid_copy_update_statements(options: DataGridCopyUpdateStatementOptions) -> Vec<String> {
-    if matches!(options.database_type, Some(DatabaseType::Neo4j | DatabaseType::Tdengine)) {
+    if matches!(options.database_type, Some(DatabaseType::Neo4j | DatabaseType::Tdengine | DatabaseType::MongoDb)) {
         return Vec::new();
     }
     let primary_keys = &options.table_meta.primary_keys;
@@ -1731,7 +1731,10 @@ pub fn format_grid_sql_literal(
     // is a numeric/boolean type rather than a bit-string type like
     // PostgreSQL's bit(n).
     if let Some(value) = value.as_bool() {
-        if is_bit_literal_column(database_type, column_info) {
+        // SQL Server has no TRUE/FALSE literals (its boolean type is BIT, which
+        // is_bit_literal_column already covers); any other column there still
+        // needs numeric 1/0 instead of a literal.
+        if is_bit_literal_column(database_type, column_info) || database_type == Some(DatabaseType::SqlServer) {
             return if value { "1" } else { "0" }.to_string();
         }
         return if value { "TRUE" } else { "FALSE" }.to_string();
@@ -2358,7 +2361,7 @@ fn build_save_row_where(
         .join(" AND ")
 }
 
-fn build_column_predicate(
+pub(crate) fn build_column_predicate(
     database_type: Option<DatabaseType>,
     column: &str,
     value: &Value,
