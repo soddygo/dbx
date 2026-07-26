@@ -331,6 +331,13 @@ export const nacosListConfigs = forward("nacosListConfigs");
 export const nacosGetConfig = forward("nacosGetConfig");
 export const nacosPublishConfig = forward("nacosPublishConfig");
 export const nacosDeleteConfig = forward("nacosDeleteConfig");
+export const nacosSearchConfigContent = forward("nacosSearchConfigContent");
+export const nacosCancelConfigContentSearch = forward("nacosCancelConfigContentSearch");
+export const nacosExportConfigs = forward("nacosExportConfigs");
+export const nacosPreviewConfigImport = forward("nacosPreviewConfigImport");
+export const nacosApplyConfigImport = forward("nacosApplyConfigImport");
+export const nacosPreviewConfigTransfer = forward("nacosPreviewConfigTransfer");
+export const nacosApplyConfigTransfer = forward("nacosApplyConfigTransfer");
 export const nacosListConfigHistory = forward("nacosListConfigHistory");
 export const nacosGetConfigHistory = forward("nacosGetConfigHistory");
 export const nacosRollbackConfig = forward("nacosRollbackConfig");
@@ -400,6 +407,7 @@ export const redisClusterMasterNodes = forward("redisClusterMasterNodes");
 
 // etcd
 export const etcdListPrefix = forward("etcdListPrefix");
+export const etcdSupportsTtl = forward("etcdSupportsTtl");
 export const etcdGet = forward("etcdGet");
 export const etcdPut = forward("etcdPut");
 export const etcdDelete = forward("etcdDelete");
@@ -617,6 +625,7 @@ export type {
   KvListPrefixResponse,
   KvListPrefixOptions,
   KvGetResponse,
+  KvGetOptions,
   KvWriteMode,
   KvCreateMode,
   KvPutOptions,

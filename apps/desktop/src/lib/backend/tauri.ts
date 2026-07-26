@@ -1782,6 +1782,7 @@ export interface KvKeyMetadata {
   modRevision?: number | null;
   version?: number | null;
   lease?: number | null;
+  ttl?: number | null;
   valueSize?: number | null;
   czxid?: number | null;
   mzxid?: number | null;
@@ -1816,6 +1817,10 @@ export interface KvGetResponse {
   metadata?: KvKeyMetadata | null;
 }
 
+export interface KvGetOptions {
+  metadataOnly?: boolean | null;
+}
+
 export interface KvPutResponse {
   revision?: number | null;
   version?: number | null;
@@ -1828,6 +1833,9 @@ export type KvWriteMode = "upsert" | "create" | "update";
 export type KvCreateMode = "persistent" | "ephemeral" | "persistent_sequential" | "ephemeral_sequential";
 
 export interface KvPutOptions {
+  lease?: number | null;
+  ttl?: number | null;
+  preserveLease?: boolean | null;
   writeMode?: KvWriteMode | null;
   createMode?: KvCreateMode | null;
 }
@@ -1841,12 +1849,25 @@ export async function etcdListPrefix(connectionId: string, prefix: string, limit
   return invoke("etcd_list_prefix", { connectionId, prefix, limit, continuation });
 }
 
-export async function etcdGet(connectionId: string, key: string): Promise<KvGetResponse> {
-  return invoke("etcd_get", { connectionId, key });
+export async function etcdSupportsTtl(connectionId: string): Promise<boolean> {
+  return invoke("etcd_supports_ttl", { connectionId });
 }
 
-export async function etcdPut(connectionId: string, key: string, value: KvValue, lease?: number | null): Promise<KvPutResponse> {
-  return invoke("etcd_put", { connectionId, key, value, lease });
+export async function etcdGet(connectionId: string, key: string, options?: KvGetOptions | null): Promise<KvGetResponse> {
+  return invoke("etcd_get", { connectionId, key, metadataOnly: options?.metadataOnly ?? null });
+}
+
+export async function etcdPut(connectionId: string, key: string, value: KvValue, options?: KvPutOptions | number | null): Promise<KvPutResponse> {
+  const legacyLease = typeof options === "number" ? options : null;
+  const putOptions = typeof options === "object" ? options : null;
+  return invoke("etcd_put", {
+    connectionId,
+    key,
+    value,
+    lease: legacyLease ?? putOptions?.lease ?? null,
+    ttl: putOptions?.ttl ?? null,
+    preserveLease: putOptions?.preserveLease ?? null,
+  });
 }
 
 export async function etcdDelete(connectionId: string, key: string): Promise<KvDeleteResponse> {
