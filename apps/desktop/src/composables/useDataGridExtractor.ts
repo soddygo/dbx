@@ -41,9 +41,11 @@ interface UseDataGridExtractorOptions {
   hasRowSelection: ComputedRef<boolean>;
   hasColumnSelection: ComputedRef<boolean>;
   selectedRowIds: Ref<Set<number>> | ComputedRef<Set<number>>;
+  contextCell: ComputedRef<{ rowId: number; rowIndex: number; col: number } | null> | Ref<{ rowId: number; rowIndex: number; col: number } | null>;
   copyText: (text: string, gridCopy?: { rows: readonly (readonly unknown[])[]; includeHeader?: boolean }) => Promise<boolean>;
   canCopySqlInsert: (request: DataGridExtractRequest) => boolean;
   buildMongoInsert: (extractorOptions: DataGridExtractorOptions, rowLimit?: number) => Promise<string | undefined>;
+  buildMongoUpdate?: (extractorOptions: DataGridExtractorOptions, rowLimit?: number) => Promise<string | undefined>;
 }
 
 export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
@@ -80,6 +82,14 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
         .map((item) => (fullItemsById.get(item.id) ?? item).data);
       selectedSourceIndexes = dedupeColumnIndexes(matrix.columnIndexes.map((index) => visibleIndexes[index] ?? index)).filter((index) => index < fullColumns.length);
       if (options.hasColumnSelection.value) selectionKind = "columns";
+    } else if (options.contextCell.value) {
+      // Right-click on a cell with no active selection: copy the full row.
+      const item = fullItemsById.get(options.contextCell.value.rowId);
+      if (item && !item.isDraft) {
+        sourceRows = [item.data];
+        selectedSourceIndexes = dedupeColumnIndexes(visibleIndexes).filter((index) => index < fullColumns.length);
+        selectionKind = "rows";
+      }
     }
 
     if (sourceRows.length === 0 || selectedSourceIndexes.length === 0) return null;
@@ -139,14 +149,27 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
 
   function canCopyWithExtractor(extractor: DataGridCopyExtractorId): boolean {
     if (hasUnsupportedDiscreteSelection.value) return false;
-    if (!options.hasRowSelection.value && !options.hasCellSelection.value) return false;
+    if (!options.hasRowSelection.value && !options.hasCellSelection.value && !options.contextCell.value) return false;
     if (extractorUnavailableForDatabase(extractor, options.databaseType.value)) return false;
     if (extractor === "sql-inserts") {
       const request = buildRequest(extractor);
       return request !== null && options.canCopySqlInsert(request);
     }
-    if (extractor === "sql-updates") return canBuildSqlUpdateRequest();
+    if (extractor === "sql-updates") {
+      // Mongo has a dedicated updateOne path that doesn't need SQL primary keys.
+      if (options.databaseType.value === "mongodb") return !!options.buildMongoUpdate;
+      return canBuildSqlUpdateRequest();
+    }
     return selectionData() !== null;
+  }
+
+  async function resolveMongoExtractorResult(extractor: DataGridCopyExtractorId, request: DataGridExtractRequest, rowLimit?: number) {
+    if (options.databaseType.value !== "mongodb") return null;
+    const builder = extractor === "sql-inserts" ? options.buildMongoInsert : extractor === "sql-updates" ? options.buildMongoUpdate : undefined;
+    if (!builder) return null;
+    const text = (await builder(request.options, rowLimit)) ?? "";
+    if (!text) return null;
+    return { text, mimeType: "application/javascript", fileExtension: "js", rowCount: rowLimit ?? request.rows.length, columnCount: request.selectedColumnIndexes.length, warnings: undefined, omittedColumns: undefined };
   }
 
   async function copyWithExtractor(extractor: DataGridCopyExtractorId): Promise<boolean> {
@@ -158,16 +181,8 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
     const request = buildRequest(extractor);
     if (!request) return false;
     try {
-      const result =
-        extractor === "sql-inserts" && options.databaseType.value === "mongodb"
-          ? {
-              text: (await options.buildMongoInsert(request.options)) ?? "",
-              mimeType: "application/javascript",
-              fileExtension: "js",
-              rowCount: request.rows.length,
-              columnCount: request.selectedColumnIndexes.length,
-            }
-          : await api.extractDataGridSelection(request);
+      const mongoResult = await resolveMongoExtractorResult(extractor, request);
+      const result = mongoResult ?? (await api.extractDataGridSelection(request));
       if (!result.text) return false;
       const selection = selectionData();
       const copied = await options.copyText(result.text, extractor === "tsv" && selection ? { rows: selection.rows } : extractor === "tsv-with-headers" && selection ? { rows: selection.rows, includeHeader: true } : undefined);
@@ -186,16 +201,8 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
     if (!request) throw new Error(t("grid.copyExtractorEmptySelection"));
     const sourceRowCount = request.rows.length;
     const previewRowCount = Math.min(sourceRowCount, DATA_GRID_EXTRACTOR_PREVIEW_MAX_ROWS);
-    const result =
-      extractor === "sql-inserts" && options.databaseType.value === "mongodb"
-        ? {
-            text: (await options.buildMongoInsert(request.options, DATA_GRID_EXTRACTOR_PREVIEW_MAX_ROWS)) ?? "",
-            mimeType: "application/javascript",
-            fileExtension: "js",
-            rowCount: previewRowCount,
-            columnCount: request.selectedColumnIndexes.length,
-          }
-        : await api.extractDataGridSelection({ ...request, rows: request.rows.slice(0, DATA_GRID_EXTRACTOR_PREVIEW_MAX_ROWS) });
+    const mongoResult = await resolveMongoExtractorResult(extractor, request, previewRowCount);
+    const result = mongoResult ?? (await api.extractDataGridSelection({ ...request, rows: request.rows.slice(0, DATA_GRID_EXTRACTOR_PREVIEW_MAX_ROWS) }));
     if (!result.text) throw new Error(t("grid.copyExtractorEmptySelection"));
     return { ...result, sourceRowCount, truncated: sourceRowCount > result.rowCount };
   }

@@ -15,7 +15,7 @@ import { formatSqlInsert, formatTsv } from "@/lib/export/exportFormats";
 import { uuid } from "@/lib/common/utils";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { expandNestedJsonStringsForCopy } from "@/lib/common/jsonCopyValue";
-import { buildMongoCopyDocumentFromOriginal, buildMongoCopyInsertDocument, formatMongoShellLiteral, type MongoInputValue } from "@/lib/mongo/mongoDocumentValues";
+import { buildMongoCopyDocumentFromOriginal, buildMongoCopyInsertDocument, buildMongoCopyUpdateDocument, formatMongoShellLiteral, type MongoInputValue } from "@/lib/mongo/mongoDocumentValues";
 import { formatMongoShellText } from "@/lib/mongo/mongoFormatter";
 import type { DatabaseType, QueryResult } from "@/types/database";
 import type { QueryResultExportRequest } from "@/lib/backend/api";
@@ -406,6 +406,30 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     return buildCopyInsertStatement(rowLimit === undefined ? data : { ...data, rows: data.rows.slice(0, rowLimit) }, extractorOptions.sql.excludePrimaryKeysFromInsert, extractorOptions.sql.insertMode);
   }
 
+  async function buildMongoExtractorUpdate(_extractorOptions: DataGridExtractorOptions, rowLimit?: number): Promise<string | undefined> {
+    const target = options.mongoUpdateTarget?.value;
+    const documents = options.mongoDocuments?.value;
+    if (!target || !documents) return undefined;
+    const rows = hasRowSelection.value ? insertEligibleRows() : (selectionInsertData()?.rows ?? []);
+    if (rows.length === 0) return undefined;
+    const limitedRows = rowLimit === undefined ? rows : rows.slice(0, rowLimit);
+    const copyColumns = effectiveColumns(sourceColumns.value, columns.value).map((column) => column ?? "");
+    await yieldToMainThread();
+    const statements: string[] = [];
+    for (const item of limitedRows) {
+      if (item.sourceIndex === undefined) continue;
+      const originalDocument = documents[item.sourceIndex];
+      if (!originalDocument || typeof originalDocument !== "object" || Array.isArray(originalDocument)) continue;
+      const source = originalDocument as Record<string, unknown>;
+      if (!Object.prototype.hasOwnProperty.call(source, target.idColumn)) continue;
+      const update = buildMongoCopyUpdateDocument(item.data as MongoInputValue[], copyColumns, item.isDirtyCol, originalDocument, target.idColumn);
+      if (!update) continue;
+      const statement = `db.getCollection(${JSON.stringify(target.collection)}).updateOne({${JSON.stringify(target.idColumn)}:${formatMongoShellLiteral(source[target.idColumn])}},${formatMongoShellLiteral(update)});`;
+      statements.push(formatMongoCopyStatement(statement) ?? statement);
+    }
+    return statements.length > 0 ? statements.join("\n") : undefined;
+  }
+
   const { copyWithExtractor, previewWithExtractor, canCopyWithExtractor } = useDataGridExtractor({
     columns,
     displayItems,
@@ -428,6 +452,8 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
       return request.rows.length > 0 && insertableCopyColumnCount(request.options.sql.excludePrimaryKeysFromInsert, selectedColumns, request.options) > 0;
     },
     buildMongoInsert: buildMongoExtractorInsert,
+    buildMongoUpdate: buildMongoExtractorUpdate,
+    contextCell,
   });
 
   async function copyAll() {
