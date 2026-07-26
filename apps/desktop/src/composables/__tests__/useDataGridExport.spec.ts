@@ -116,6 +116,7 @@ function createExportState(
   selectedRowIdValues: number[] = [],
   extractorOptions = DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS,
   hasColumnSelection = false,
+  visibleColumnIndexes?: number[],
 ) {
   const rows = (rowDataList ?? [rowData ?? columns.map((column, index) => (column === "id" ? 1 : `value-${index}`))]).map((data, index) => ({ ...row(data), id: index + 1 }));
   const item = rows[0]!;
@@ -130,6 +131,7 @@ function createExportState(
     database: computed(() => "dbx"),
     context: computed(() => "table-data"),
     sourceColumns: computed(() => columns),
+    visibleColumnIndexes: computed(() => visibleColumnIndexes ?? columns.map((_, index) => index)),
     columnTypes: computed(() => columns.map(() => "varchar")),
     extractorOptions: computed(() => extractorOptions),
     whereInput: computed(() => undefined),
@@ -388,6 +390,25 @@ describe("useDataGridExport prepared row statements", () => {
       }),
     );
     expect(copyToClipboard).toHaveBeenCalledWith("UPDATE users SET active = TRUE WHERE id = 7;");
+  });
+
+  it("preserves drag-reordered visible column order when copying", async () => {
+    vi.mocked(extractDataGridSelection).mockResolvedValue({ text: "x", mimeType: "text/csv", fileExtension: "csv", rowCount: 1, columnCount: 3 });
+    const matrix: CellSelectionMatrix = {
+      rowIndexes: [0],
+      columnIndexes: [0, 1, 2],
+      columns: ["id", "name", "note"],
+      rows: [[1, "Ada", "x"]],
+    };
+    // User dragged columns into note, id, name order (source indexes 2, 0, 1).
+    const state = createExportState(editableTable, ["id", "name", "note"], matrix, undefined, undefined, undefined, [], DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS, false, [2, 0, 1]);
+    await state.copyWithExtractor("csv");
+
+    expect(extractDataGridSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        columns: [expect.objectContaining({ displayName: "note" }), expect.objectContaining({ displayName: "id" }), expect.objectContaining({ displayName: "name" })],
+      }),
+    );
   });
 
   it("rejects SQL UPDATE when the selection contains no writable non-key column", () => {

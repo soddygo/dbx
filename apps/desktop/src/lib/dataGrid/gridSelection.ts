@@ -39,6 +39,13 @@ export function normalizeSelectedColumnIndexes(columnIndexes: Iterable<number>):
   return [...new Set(columnIndexes)].filter((index) => index >= 0).sort((a, b) => a - b);
 }
 
+export function dedupeColumnIndexes(columnIndexes: Iterable<number>): number[] {
+  // Deduplicate while preserving the first visible occurrence (insertion order)
+  // instead of numeric order. Used by the copy/extractor path so drag-reordered
+  // columns stay in the order the user sees them.
+  return [...new Set(columnIndexes)].filter((index) => index >= 0);
+}
+
 export function normalizeSelectionRange(anchor: CellPosition, focus: CellPosition): CellSelectionRange {
   return {
     startRow: Math.min(anchor.rowIndex, focus.rowIndex),

@@ -2,7 +2,7 @@ import { computed, type ComputedRef, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import * as api from "@/lib/backend/api";
 import { useToast } from "@/composables/useToast";
-import { normalizeSelectedColumnIndexes, type CellSelectionMatrix, type SelectionData } from "@/lib/dataGrid/gridSelection";
+import { dedupeColumnIndexes, type CellSelectionMatrix, type SelectionData } from "@/lib/dataGrid/gridSelection";
 import {
   DATA_GRID_COPY_EXTRACTOR_DESCRIPTORS,
   DATA_GRID_EXTRACTOR_CONTRACT_VERSION,
@@ -69,7 +69,7 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
 
     if (options.hasRowSelection.value && options.selectedRowIds.value.size > 0) {
       sourceRows = options.displayItems.value.filter((item) => options.selectedRowIds.value.has(item.id) && !item.isDraft).map((item) => (fullItemsById.get(item.id) ?? item).data);
-      selectedSourceIndexes = normalizeSelectedColumnIndexes(visibleIndexes).filter((index) => index < fullColumns.length);
+      selectedSourceIndexes = dedupeColumnIndexes(visibleIndexes).filter((index) => index < fullColumns.length);
       selectionKind = "rows";
     } else if (options.selectedCellMatrix.value) {
       const matrix = options.selectedCellMatrix.value;
@@ -77,7 +77,7 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
         .map((rowIndex) => options.displayItems.value[rowIndex])
         .filter((item): item is ExtractorRowItem => !!item && !item.isDraft)
         .map((item) => (fullItemsById.get(item.id) ?? item).data);
-      selectedSourceIndexes = normalizeSelectedColumnIndexes(matrix.columnIndexes.map((index) => visibleIndexes[index] ?? index)).filter((index) => index < fullColumns.length);
+      selectedSourceIndexes = dedupeColumnIndexes(matrix.columnIndexes.map((index) => visibleIndexes[index] ?? index)).filter((index) => index < fullColumns.length);
       if (options.hasColumnSelection.value) selectionKind = "columns";
     }
 
