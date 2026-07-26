@@ -411,6 +411,25 @@ describe("useDataGridExport prepared row statements", () => {
     );
   });
 
+  it("excludes hidden columns and keeps visible order when copying", async () => {
+    vi.mocked(extractDataGridSelection).mockResolvedValue({ text: "x", mimeType: "text/csv", fileExtension: "csv", rowCount: 1, columnCount: 2 });
+    const matrix: CellSelectionMatrix = {
+      rowIndexes: [0],
+      columnIndexes: [0, 1],
+      columns: ["note", "id"],
+      rows: [["x", 1]],
+    };
+    // Columns id/name/note; "name" is hidden, so visible order is note, id (source 2, 0).
+    const state = createExportState(editableTable, ["id", "name", "note"], matrix, undefined, undefined, undefined, [], DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS, false, [2, 0]);
+    await state.copyWithExtractor("csv");
+
+    expect(extractDataGridSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        columns: [expect.objectContaining({ displayName: "note" }), expect.objectContaining({ displayName: "id" })],
+      }),
+    );
+  });
+
   it("rejects SQL UPDATE when the selection contains no writable non-key column", () => {
     const matrix: CellSelectionMatrix = {
       rowIndexes: [0],
