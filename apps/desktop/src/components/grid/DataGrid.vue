@@ -7535,7 +7535,8 @@ function buildExtractorContextItems(): ContextMenuItem[] {
     items.push({
       label: `${selected ? "✓ " : ""}${copyExtractorLabel(extractor)}`,
       action: () => {
-        settingsStore.updateEditorSettings({ dataGridCopyExtractor: extractor });
+        // One-off copy as the chosen format; do NOT persist it as the default —
+        // the saved default stays controlled by the toolbar/settings dialog.
         void copyWithExtractor(extractor);
       },
       disabled: !canCopyWithExtractor(extractor),
