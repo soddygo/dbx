@@ -51,6 +51,53 @@ fn extracts_csv_with_minimal_standard_quoting() {
 }
 
 #[test]
+fn csv_distinguishes_null_from_null_string() {
+    let mut request = request(DataGridExtractorId::Csv);
+    request.rows = vec![vec![json!(1), Value::Null], vec![json!(2), json!("NULL")]];
+    let result = extract_data_grid_selection(request).expect("CSV extraction");
+    // NULL emits the bare sentinel; the literal string "NULL" is force-quoted.
+    assert_eq!(result.text, "1,NULL\n2,\"NULL\"");
+}
+
+#[test]
+fn csv_keeps_null_unquoted_under_always_quote() {
+    let mut request = request(DataGridExtractorId::Csv);
+    request.rows = vec![vec![json!(1), Value::Null], vec![json!(2), json!("NULL")]];
+    request.options.dsv.quote_policy = DataGridQuotePolicy::Always;
+    let result = extract_data_grid_selection(request).expect("CSV extraction");
+    // NULL stays bare even under Always; the string is quoted, so they differ.
+    assert_eq!(result.text, "\"1\",NULL\n\"2\",\"NULL\"");
+}
+
+#[test]
+fn csv_null_and_sentinel_collapse_under_never_quote() {
+    let mut request = request(DataGridExtractorId::Csv);
+    request.rows = vec![vec![json!(1), Value::Null], vec![json!(2), json!("NULL")]];
+    request.options.dsv.quote_policy = DataGridQuotePolicy::Never;
+    let result = extract_data_grid_selection(request).expect("CSV extraction");
+    // Under Never quoting, NULL and the string "NULL" are inherently indistinguishable.
+    assert_eq!(result.text, "1,NULL\n2,NULL");
+}
+
+#[test]
+fn csv_empty_null_text_distinguishes_empty_string() {
+    let mut request = request(DataGridExtractorId::Csv);
+    request.rows = vec![vec![json!(1), Value::Null], vec![json!(2), json!("")]];
+    request.options.dsv.null_text = String::new();
+    let result = extract_data_grid_selection(request).expect("CSV extraction");
+    // NULL -> bare empty; the empty string is force-quoted.
+    assert_eq!(result.text, "1,\n2,\"\"");
+}
+
+#[test]
+fn one_row_distinguishes_null_from_null_string() {
+    let mut request = request(DataGridExtractorId::OneRow);
+    request.rows = vec![vec![json!(1), Value::Null], vec![json!(2), json!("NULL")]];
+    let result = extract_data_grid_selection(request).expect("one-row extraction");
+    assert_eq!(result.text, "1,NULL,2,\"NULL\"");
+}
+
+#[test]
 fn extracts_one_row_as_a_single_csv_record() {
     let result = extract_data_grid_selection(request(DataGridExtractorId::OneRow)).expect("One-row extraction");
     assert_eq!(result.text, "1,Ada,2,\"Grace, Hopper\"");
