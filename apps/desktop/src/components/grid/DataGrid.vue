@@ -7592,8 +7592,6 @@ function copySubmenu(): ContextMenuItem {
   }
   items.push({ label: t("grid.copyAll"), action: copyAll });
   items.push({ label: t("grid.copyColumnNames"), action: openCopyAllColumnNamesDialog });
-  items.push({ label: "", separator: true });
-  items.push({ label: t("grid.copyAs"), children: buildExtractorContextItems() });
   return { label: t("grid.copy"), icon: Copy, children: items };
 }
 
@@ -7740,6 +7738,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
       actions: { cellDetails: openContextCellDetailDialog, columnDetails: openContextColumnDetailDialog, rowDetails: openContextRowDetailDialog, setNull: setSelectionNull, bulkEdit: openBulkEditDialog, transpose: openContextTranspose },
       downloadItem: binaryDownloadSubmenu(contextCellDetail.value),
       copySubmenu: copySubmenu(),
+      copyAsSubmenu: { label: t("grid.copyAs"), children: buildExtractorContextItems() },
       selectionSubmenu: selectionSubmenu(),
       generateSubmenu: {
         label: t("grid.generateValue"),
