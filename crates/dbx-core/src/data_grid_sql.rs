@@ -294,8 +294,14 @@ pub fn prepare_data_grid_save(options: DataGridSaveStatementOptions) -> DataGrid
     }
 }
 
+/// Relational SQL UPDATE/WHERE predicates are not meaningful for graph,
+/// document, or time-series stores that don't speak relational SQL.
+pub(crate) fn supports_relational_copy_predicates(database_type: Option<DatabaseType>) -> bool {
+    !matches!(database_type, Some(DatabaseType::Neo4j | DatabaseType::Tdengine | DatabaseType::MongoDb))
+}
+
 pub fn build_data_grid_copy_update_statements(options: DataGridCopyUpdateStatementOptions) -> Vec<String> {
-    if matches!(options.database_type, Some(DatabaseType::Neo4j | DatabaseType::Tdengine | DatabaseType::MongoDb)) {
+    if !supports_relational_copy_predicates(options.database_type) {
         return Vec::new();
     }
     let primary_keys = &options.table_meta.primary_keys;

@@ -6,9 +6,9 @@ use super::{
 use crate::data_grid_sql::{
     build_column_predicate, build_data_grid_copy_insert_statement, build_data_grid_copy_update_statements,
     format_grid_sql_literal, is_auto_generated_column, is_grid_insert_omitted_column, is_non_identity_generated_column,
-    DataGridCopyInsertStatementOptions, DataGridCopyUpdateStatementOptions, DataGridTableMeta,
+    supports_relational_copy_predicates, DataGridCopyInsertStatementOptions, DataGridCopyUpdateStatementOptions,
+    DataGridTableMeta,
 };
-use crate::models::connection::DatabaseType;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::io::Write;
@@ -271,10 +271,7 @@ pub(super) fn write_where_clause(
     // for graph/document/time-series stores. Unlike `write_sql_updates`, this
     // intentionally does NOT auto-append primary keys: the predicate reflects the
     // exact cells the user selected.
-    if matches!(
-        context.request.database_type,
-        Some(DatabaseType::Neo4j | DatabaseType::Tdengine | DatabaseType::MongoDb)
-    ) {
+    if !supports_relational_copy_predicates(context.request.database_type) {
         return Err(DataGridExtractError::new(
             DataGridExtractErrorCode::UnsupportedDatabase,
             "WHERE-clause extraction is not supported for this database type.",

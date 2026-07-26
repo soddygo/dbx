@@ -32,6 +32,18 @@ export type DataGridSelectionKind = "cells" | "rows" | "columns";
 export type DataGridQuotePolicy = "always" | "minimal" | "never";
 export type DataGridExtractorOptionsError = "column-separator-empty" | "row-separator-empty" | "separator-too-long" | "null-text-too-long" | "separators-overlap" | "invalid-quote" | "quote-conflicts";
 
+/** Extractors that emit relational SQL predicates (UPDATE/WHERE) — not meaningful
+ * for graph/document/time-series stores that don't speak relational SQL. */
+const RELATIONAL_PREDICATE_EXTRACTORS: ReadonlyArray<DataGridCopyExtractorId> = ["sql-updates", "where-clause"];
+const NON_RELATIONAL_DATABASE_TYPES: ReadonlyArray<string> = ["neo4j", "tdengine", "mongodb"];
+
+/** True when the extractor emits relational SQL the database type cannot run.
+ * Single source of truth for the toolbar dropdown, the extractor dialog, the
+ * context menu, and the runtime capability check. */
+export function extractorUnavailableForDatabase(extractor: DataGridCopyExtractorId, databaseType: string | undefined | null): boolean {
+  return RELATIONAL_PREDICATE_EXTRACTORS.includes(extractor) && NON_RELATIONAL_DATABASE_TYPES.includes(databaseType ?? "");
+}
+
 export interface DataGridDsvOptions {
   columnSeparator: string;
   rowSeparator: string;
