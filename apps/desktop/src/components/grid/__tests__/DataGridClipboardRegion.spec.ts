@@ -5,7 +5,7 @@ const dataGridSource = readFileSync(new URL("../DataGrid.vue", import.meta.url),
 
 describe("DataGrid native clipboard regions", () => {
   it("keeps table info text selection out of grid copy shortcuts", () => {
-    const drawerStart = dataGridSource.indexOf('<div v-if="showTableInfo"');
+    const drawerStart = dataGridSource.indexOf('v-if="showTableInfo"');
     const drawerTagEnd = dataGridSource.indexOf(">", drawerStart);
 
     expect(drawerStart).toBeGreaterThanOrEqual(0);
