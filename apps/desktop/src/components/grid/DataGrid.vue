@@ -5105,25 +5105,10 @@ const {
   copyText,
   copyCell,
   copyRow,
-  copyRowAsInsert,
-  copyRowAsInsertWithoutPrimaryKeys,
-  canCopyRowAsInsert,
-  copyRowAsUpdate,
-  canCopyRowAsInsertWithoutPrimaryKeys,
-  canCopyRowAsUpdate,
   copyAll,
-  copySelectionTsv,
-  copySelectionTsvWithHeaders,
-  copySelectionCsv,
-  copySelectionJson,
-  copySelectionSqlInList,
   copyWithExtractor,
   previewWithExtractor,
   canCopyWithExtractor,
-  copySelectionAsInsert,
-  canCopySelectionAsInsert,
-  copySelectedRowsTsv,
-  copySelectedRowsTsvWithHeaders,
   exportCsv,
   exportCurrentPageCsv,
   exportJson,
@@ -5736,7 +5721,7 @@ function generateSelectionMenuItems(disabled: boolean): ContextMenuItem[] {
 
 function cutSelection() {
   if (!props.editable || !selectedRange.value) return;
-  copySelectionTsv();
+  void copyWithExtractor("tsv");
   const range = selectedRange.value;
   const allowDraftSelectionValue = selectedRangeTargetsOnlyDraftRow();
   beginBatch();
@@ -7490,20 +7475,6 @@ function rowActionLabels() {
   };
 }
 
-function copyRowLabels() {
-  const count = multiRowCount.value;
-  return {
-    row: isMultiRow.value ? t("grid.copyRows", { count }) : t("grid.copyRow"),
-    insert: isMultiRow.value ? t("grid.copyRowsInsert", { count }) : t("grid.copyRowInsert"),
-    insertMerged: t("grid.copyRowsInsertMerged", { count }),
-    insertRowByRow: t("grid.copyRowsInsertRowByRow", { count }),
-    insertNoPk: isMultiRow.value ? t("grid.copyRowsInsertWithoutPrimaryKeys", { count }) : t("grid.copyRowInsertWithoutPrimaryKeys"),
-    insertNoPkMerged: t("grid.copyRowsInsertWithoutPrimaryKeysMerged", { count }),
-    insertNoPkRowByRow: t("grid.copyRowsInsertWithoutPrimaryKeysRowByRow", { count }),
-    update: isMultiRow.value ? t("grid.copyRowsUpdate", { count }) : t("grid.copyRowUpdate"),
-  };
-}
-
 function filterSubmenu(): ContextMenuItem {
   return createDataGridFilterSubmenu({
     label: t("grid.filter"),
@@ -7553,70 +7524,17 @@ function buildExtractorContextItems(): ContextMenuItem[] {
 }
 
 function copySubmenu(): ContextMenuItem {
-  const labels = copyRowLabels();
   const items: ContextMenuItem[] = [];
   if (contextColumn.value) {
     items.push({ label: t("grid.copyCell"), action: copyCell });
   }
-  items.push({ label: labels.row, action: copyRow });
-  if (hasRowSelection.value && selectedRowCount.value > 0) {
-    const singleRowSelected = selectedRowCount.value === 1;
-    items.push({ label: singleRowSelected ? t("grid.copySelectedRowTsv") : t("grid.copySelectedRowsTsv", { count: selectedRowCount.value }), action: copySelectedRowsTsv });
-    items.push({ label: singleRowSelected ? t("grid.copySelectedRowTsvWithHeaders") : t("grid.copySelectedRowsTsvWithHeaders", { count: selectedRowCount.value }), action: copySelectedRowsTsvWithHeaders });
-  }
-  if (isMultiRow.value) {
-    items.push({ label: labels.insertMerged, action: () => copyRowAsInsert("merged"), disabled: !canCopyRowAsInsert.value });
-    items.push({ label: labels.insertRowByRow, action: () => copyRowAsInsert("row-by-row"), disabled: !canCopyRowAsInsert.value });
-  } else {
-    items.push({ label: labels.insert, action: () => copyRowAsInsert(), disabled: !canCopyRowAsInsert.value });
-  }
-  if (canCopyRowAsInsertWithoutPrimaryKeys.value) {
-    if (isMultiRow.value) {
-      items.push({
-        label: labels.insertNoPkMerged,
-        action: () => copyRowAsInsertWithoutPrimaryKeys("merged"),
-      });
-      items.push({
-        label: labels.insertNoPkRowByRow,
-        action: () => copyRowAsInsertWithoutPrimaryKeys("row-by-row"),
-      });
-    } else {
-      items.push({
-        label: labels.insertNoPk,
-        action: () => copyRowAsInsertWithoutPrimaryKeys(),
-      });
-    }
-  }
-  if (canCopyRowAsUpdate.value) {
-    items.push({ label: labels.update, action: copyRowAsUpdate });
-  }
+  items.push({ label: isMultiRow.value ? t("grid.copyRows", { count: multiRowCount.value }) : t("grid.copyRow"), action: copyRow });
+  items.push({ label: "", separator: true });
+  items.push(...buildExtractorContextItems());
+  items.push({ label: "", separator: true });
   items.push({ label: t("grid.copyAll"), action: copyAll });
   items.push({ label: t("grid.copyColumnNames"), action: openCopyAllColumnNamesDialog });
   return { label: t("grid.copy"), icon: Copy, children: items };
-}
-
-function selectionSubmenu(): ContextMenuItem {
-  const insertItems: ContextMenuItem[] =
-    selectedCells.value.rows.length > 1
-      ? [
-          { label: t("grid.copySelectionInsertMerged"), action: () => void copySelectionAsInsert("merged"), disabled: () => !canCopySelectionAsInsert.value },
-          { label: t("grid.copySelectionInsertRowByRow"), action: () => void copySelectionAsInsert("row-by-row"), disabled: () => !canCopySelectionAsInsert.value },
-        ]
-      : [{ label: t("grid.copySelectionInsert"), action: () => void copySelectionAsInsert(), disabled: () => !canCopySelectionAsInsert.value }];
-  return {
-    label: t("grid.selection"),
-    icon: SquareDashed,
-    children: [
-      { label: t("grid.copySelectionTsv"), action: copySelectionTsv },
-      { label: t("grid.copySelectionTsvWithHeaders"), action: copySelectionTsvWithHeaders },
-      { label: t("grid.copySelectionCsv"), action: copySelectionCsv },
-      { label: t("grid.copySelectionJson"), action: copySelectionJson },
-      { label: t("grid.copySelectionSql"), action: copySelectionSqlInList },
-      ...insertItems,
-      { label: "", separator: true },
-      { label: t("grid.clearSelection"), action: clearCellSelection },
-    ],
-  };
 }
 
 function exportSubmenu(): ContextMenuItem {
@@ -7738,8 +7656,7 @@ const gridContextMenuItems = computed<ContextMenuItem[]>(() => {
       actions: { cellDetails: openContextCellDetailDialog, columnDetails: openContextColumnDetailDialog, rowDetails: openContextRowDetailDialog, setNull: setSelectionNull, bulkEdit: openBulkEditDialog, transpose: openContextTranspose },
       downloadItem: binaryDownloadSubmenu(contextCellDetail.value),
       copySubmenu: copySubmenu(),
-      copyAsSubmenu: { label: t("grid.copyAs"), children: buildExtractorContextItems() },
-      selectionSubmenu: selectionSubmenu(),
+      clearSelectionItem: { label: t("grid.clearSelection"), action: clearCellSelection, icon: SquareDashed },
       generateSubmenu: {
         label: t("grid.generateValue"),
         icon: WandSparkles,

@@ -1,47 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { dedupeColumnIndexes, formatSelectionAsCsv, formatSelectionAsTsv, summarizeSelection } from "@/lib/dataGrid/gridSelection";
+import { dedupeColumnIndexes, summarizeSelection } from "@/lib/dataGrid/gridSelection";
 
 describe("gridSelection", () => {
-  it("formats TSV selections without headers by default", () => {
-    expect(
-      formatSelectionAsTsv({
-        columns: ["id", "name"],
-        rows: [
-          [1, "Ada"],
-          [2, "Lin"],
-        ],
-      }),
-    ).toBe("1\tAda\n2\tLin");
-  });
-
-  it("can include column headers in TSV selections", () => {
-    expect(
-      formatSelectionAsTsv(
-        {
-          columns: ["id", "name"],
-          rows: [
-            [1, "Ada"],
-            [2, "Lin"],
-          ],
-        },
-        true,
-      ),
-    ).toBe("id\tname\n1\tAda\n2\tLin");
-  });
-
-  it("formats RFC-style CSV with optional headers and escaped values", () => {
-    const selection = {
-      columns: ["id", "note"],
-      rows: [
-        [1, 'Ada, said "hello"'],
-        [null, "line one\nline two"],
-      ],
-    };
-
-    expect(formatSelectionAsCsv(selection)).toBe('"id","note"\n"1","Ada, said ""hello"""\n"NULL","line one\nline two"');
-    expect(formatSelectionAsCsv(selection, false)).toBe('"1","Ada, said ""hello"""\n"NULL","line one\nline two"');
-  });
-
   it("summarizes empty selections", () => {
     expect(summarizeSelection({ columns: [], rows: [] })).toEqual({
       cellCount: 0,
