@@ -393,14 +393,15 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
   }
 
   async function buildMongoExtractorInsert(extractorOptions: DataGridExtractorOptions, rowLimit?: number): Promise<string | undefined> {
-    const data: CopyInsertData | null = hasRowSelection.value
-      ? {
-          columns: columns.value,
-          sourceColumns: sourceColumns.value,
-          columnTypes: columnTypes.value?.map((type) => type ?? undefined),
-          rows: insertEligibleRows(),
-        }
-      : selectionInsertData();
+    const data: CopyInsertData | null =
+      hasRowSelection.value || !hasCellSelection.value
+        ? {
+            columns: columns.value,
+            sourceColumns: sourceColumns.value,
+            columnTypes: columnTypes.value?.map((type) => type ?? undefined),
+            rows: insertEligibleRows(),
+          }
+        : selectionInsertData();
     if (!data) return undefined;
     await yieldToMainThread();
     return buildCopyInsertStatement(rowLimit === undefined ? data : { ...data, rows: data.rows.slice(0, rowLimit) }, extractorOptions.sql.excludePrimaryKeysFromInsert, extractorOptions.sql.insertMode);
@@ -410,7 +411,7 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     const target = options.mongoUpdateTarget?.value;
     const documents = options.mongoDocuments?.value;
     if (!target || !documents) return undefined;
-    const rows = hasRowSelection.value ? insertEligibleRows() : (selectionInsertData()?.rows ?? []);
+    const rows = insertEligibleRows();
     if (rows.length === 0) return undefined;
     const limitedRows = rowLimit === undefined ? rows : rows.slice(0, rowLimit);
     const copyColumns = effectiveColumns(sourceColumns.value, columns.value).map((column) => column ?? "");
