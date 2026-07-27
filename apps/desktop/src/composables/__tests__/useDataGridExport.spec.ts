@@ -100,6 +100,7 @@ function createExportState(
   extractorOptions = DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS,
   hasColumnSelection = false,
   visibleColumnIndexes?: number[],
+  contextCellCol = -1,
 ) {
   const rows = (rowDataList ?? [rowData ?? columns.map((column, index) => (column === "id" ? 1 : `value-${index}`))]).map((data, index) => ({ ...row(data), id: index + 1 }));
   const item = rows[0]!;
@@ -125,7 +126,7 @@ function createExportState(
     selectedCells: computed(() => selectedCellMatrix ?? selectedCellsOverride ?? { columns: [], rows: [] }),
     selectedCellMatrix: computed(() => selectedCellMatrix ?? null),
     selectedRange: computed(() => null),
-    contextCell: ref({ rowId: item.id, rowIndex: 0, col: -1 }),
+    contextCell: ref({ rowId: item.id, rowIndex: 0, col: contextCellCol }),
     getRowItem: (rowId) => rows.find((candidate) => candidate.id === rowId),
     selectedRowIds,
     hasRowSelection: computed(() => selectedRowIds.value.size > 0),
@@ -205,9 +206,9 @@ describe("useDataGridExport prepared row statements", () => {
     expect(extractDataGridSelection).toHaveBeenCalledWith(
       expect.objectContaining({
         extractor: "sql-updates",
-        selectedColumnIndexes: [0],
-        rows: [[true, 7]],
-        selectionKind: "cells",
+        selectedColumnIndexes: [0, 1],
+        rows: [["Ada", true, 7]],
+        selectionKind: "rows",
       }),
     );
     expect(copyToClipboard).toHaveBeenCalledWith("UPDATE users SET active = TRUE WHERE id = 7;");
@@ -247,6 +248,26 @@ describe("useDataGridExport prepared row statements", () => {
     expect(extractDataGridSelection).toHaveBeenCalledWith(
       expect.objectContaining({
         columns: [expect.objectContaining({ displayName: "note" }), expect.objectContaining({ displayName: "id" })],
+      }),
+    );
+  });
+
+  it("copies the full row when right-clicking a cell with a synthetic single-cell selection", async () => {
+    vi.mocked(extractDataGridSelection).mockResolvedValue({ text: "x", mimeType: "text/csv", fileExtension: "csv", rowCount: 1, columnCount: 3 });
+    // A synthetic 1×1 selection (what right-click creates) — only column 0 of row 0.
+    const matrix: CellSelectionMatrix = {
+      rowIndexes: [0],
+      columnIndexes: [0],
+      columns: ["id"],
+      rows: [[1]],
+    };
+    const state = createExportState(editableTable, ["id", "name", "note"], matrix, undefined, undefined, undefined, [], DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS, false, [0, 1, 2], 0);
+    await state.copyWithExtractor("csv");
+
+    // Despite the 1×1 matrix, the context-cell fallback should produce a full-row request (3 columns).
+    expect(extractDataGridSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        columns: [expect.objectContaining({ displayName: "id" }), expect.objectContaining({ displayName: "name" }), expect.objectContaining({ displayName: "note" })],
       }),
     );
   });

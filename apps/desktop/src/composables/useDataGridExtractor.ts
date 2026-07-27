@@ -70,26 +70,40 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
     let selectedSourceIndexes: number[] = [];
     let selectionKind: DataGridExtractRequest["selectionKind"] = "cells";
 
+    const matrix = options.selectedCellMatrix.value;
+    const isMultiCellSelection = !!matrix && (matrix.rowIndexes.length > 1 || matrix.columnIndexes.length > 1);
+    // A right-click sets contextCell.col to the clicked column (≥ 0); the test
+    // harness and non-right-click paths leave it at -1. Only treat a 1×1 matrix
+    // as synthetic when there's a real right-click context.
+    const hasRightClickContext = !!options.contextCell.value && options.contextCell.value.col >= 0;
+
     if (options.hasRowSelection.value && options.selectedRowIds.value.size > 0) {
       sourceRows = options.displayItems.value.filter((item) => options.selectedRowIds.value.has(item.id) && !item.isDraft).map((item) => (fullItemsById.get(item.id) ?? item).data);
       selectedSourceIndexes = dedupeColumnIndexes(visibleIndexes).filter((index) => index < fullColumns.length);
       selectionKind = "rows";
-    } else if (options.selectedCellMatrix.value) {
-      const matrix = options.selectedCellMatrix.value;
+    } else if (isMultiCellSelection && matrix) {
       sourceRows = matrix.rowIndexes
         .map((rowIndex) => options.displayItems.value[rowIndex])
         .filter((item): item is ExtractorRowItem => !!item && !item.isDraft)
         .map((item) => (fullItemsById.get(item.id) ?? item).data);
       selectedSourceIndexes = dedupeColumnIndexes(matrix.columnIndexes.map((index) => visibleIndexes[index] ?? index)).filter((index) => index < fullColumns.length);
       if (options.hasColumnSelection.value) selectionKind = "columns";
-    } else if (options.contextCell.value) {
-      // Right-click on a cell with no active selection: copy the full row.
+    } else if (hasRightClickContext && options.contextCell.value) {
+      // Right-click on a cell with no (or synthetic single-cell) selection: copy the full row.
       const item = fullItemsById.get(options.contextCell.value.rowId);
       if (item && !item.isDraft) {
         sourceRows = [item.data];
         selectedSourceIndexes = dedupeColumnIndexes(visibleIndexes).filter((index) => index < fullColumns.length);
         selectionKind = "rows";
       }
+    } else if (matrix) {
+      // Single-cell matrix without a context cell — still honor the explicit selection.
+      sourceRows = matrix.rowIndexes
+        .map((rowIndex) => options.displayItems.value[rowIndex])
+        .filter((item): item is ExtractorRowItem => !!item && !item.isDraft)
+        .map((item) => (fullItemsById.get(item.id) ?? item).data);
+      selectedSourceIndexes = dedupeColumnIndexes(matrix.columnIndexes.map((index) => visibleIndexes[index] ?? index)).filter((index) => index < fullColumns.length);
+      if (options.hasColumnSelection.value) selectionKind = "columns";
     }
 
     if (sourceRows.length === 0 || selectedSourceIndexes.length === 0) return null;
