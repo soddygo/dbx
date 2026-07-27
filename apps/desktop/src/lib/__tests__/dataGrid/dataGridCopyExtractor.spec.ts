@@ -33,6 +33,19 @@ describe("data-grid extractor options", () => {
     expect(validateDataGridExtractorOptions("one-row", options)).toBe("invalid-quote");
   });
 
+  it("normalizes and validates separator and null-text limits by Unicode code point", () => {
+    const columnSeparator = "🙂".repeat(5);
+    const nullText = "🧊".repeat(40);
+    const normalized = normalizeDataGridExtractorOptions({
+      ...DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS,
+      dsv: { ...DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS.dsv, columnSeparator, nullText },
+    });
+
+    expect(normalized.dsv.columnSeparator).toBe(columnSeparator);
+    expect(normalized.dsv.nullText).toBe(nullText);
+    expect(validateDataGridExtractorOptions("dsv", normalized)).toBeNull();
+  });
+
   it("rejects quote conflicts, control quotes, and oversized values", () => {
     const options = normalizeDataGridExtractorOptions(DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS);
     options.dsv.quote = ",";

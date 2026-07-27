@@ -7,6 +7,7 @@ import type { DataGridTableMeta } from "@/lib/dataGrid/dataGridSql";
 import type { CellSelectionMatrix, SelectionData } from "@/lib/dataGrid/gridSelection";
 import { extractDataGridSelection } from "@/lib/backend/api";
 import { DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS } from "@/lib/dataGrid/dataGridCopyExtractor";
+import { clearDataGridClipboardCopy, parseDataGridClipboard } from "@/lib/dataGrid/dataGridClipboard";
 
 const toast = vi.fn();
 
@@ -18,9 +19,13 @@ vi.mock("@/composables/useToast", () => ({
   useToast: () => ({ toast }),
 }));
 
-vi.mock("@/lib/common/clipboard", () => ({
-  copyToClipboard: vi.fn(),
-}));
+vi.mock("@/lib/common/clipboard", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/common/clipboard")>();
+  return {
+    ...original,
+    copyToClipboard: vi.fn(),
+  };
+});
 
 vi.mock("@/lib/dataGrid/dataGridSql", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/dataGrid/dataGridSql")>();
@@ -148,6 +153,7 @@ const editableTable: DataGridTableMeta = {
 describe("useDataGridExport prepared row statements", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearDataGridClipboardCopy();
   });
 
   it("builds SQL UPDATE from only selected writable columns while retaining a hidden primary key", async () => {
@@ -293,6 +299,34 @@ describe("useDataGridExport prepared row statements", () => {
         columns: [expect.objectContaining({ displayName: "name" })],
       }),
     );
+  });
+
+  it("preserves the effective row-header TSV matrix across copy and paste", async () => {
+    const rows = [
+      [1, null],
+      [2, "inside\ttab\nnext line"],
+    ];
+    const matrix: CellSelectionMatrix = {
+      rowIndexes: [0, 1],
+      columnIndexes: [0, 1],
+      columns: ["id", "name"],
+      rows,
+    };
+    const extractorOptions = {
+      ...DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS,
+      dsv: { ...DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS.dsv, includeColumnHeader: true, includeRowHeader: true },
+    };
+    const text = '#\tid\tname\n1\t1\tNULL\n2\t2\t"inside\ttab\nnext line"';
+    vi.mocked(extractDataGridSelection).mockResolvedValueOnce({ text, mimeType: "text/tab-separated-values", fileExtension: "tsv", rowCount: 2, columnCount: 3 });
+    const state = createExportState(editableTable, ["id", "name"], matrix, undefined, undefined, rows, [], extractorOptions);
+
+    await expect(state.copyWithExtractor("tsv-with-headers")).resolves.toBe(true);
+
+    expect(parseDataGridClipboard(text)).toEqual([
+      ["#", "id", "name"],
+      ["1", "1", null],
+      ["2", "2", "inside\ttab\nnext line"],
+    ]);
   });
 
   it("rejects SQL UPDATE when the selection contains no writable non-key column", () => {

@@ -1,8 +1,8 @@
 import { computed, ref } from "vue";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useDataGridSelection } from "@/composables/useDataGridSelection";
 
-function createSelection(options?: { getScrollElement?: () => HTMLElement | null; cellFromClientPoint?: (clientX: number, clientY: number) => { rowIndex: number; colIndex: number } | null; rowFromClientPoint?: (clientX: number, clientY: number) => number | null }) {
+function createSelection(options?: { getScrollElement?: () => HTMLElement | null; cellFromClientPoint?: (clientX: number, clientY: number) => { rowIndex: number; colIndex: number } | null; rowFromClientPoint?: (clientX: number, clientY: number) => number | null; onUserCellSelection?: () => void }) {
   const columns = computed(() => ["id", "name", "email"]);
   const displayItems = computed(() =>
     [1, 2, 3, 4].map((id, index) => ({
@@ -27,6 +27,7 @@ function createSelection(options?: { getScrollElement?: () => HTMLElement | null
     getScrollElement: options?.getScrollElement,
     cellFromClientPoint: options?.cellFromClientPoint,
     rowFromClientPoint: options?.rowFromClientPoint,
+    onUserCellSelection: options?.onUserCellSelection,
   });
 }
 
@@ -39,6 +40,29 @@ function rowEvent(options: { meta?: boolean; shift?: boolean } = {}): MouseEvent
 }
 
 describe("useDataGridSelection", () => {
+  it("invalidates synthetic context state for ordinary, Ctrl, and Cmd cell selection", () => {
+    const originalDocument = globalThis.document;
+    const fakeDocument = {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as Document;
+    Object.defineProperty(globalThis, "document", { configurable: true, value: fakeDocument });
+    const onUserCellSelection = vi.fn();
+    const selection = createSelection({ onUserCellSelection });
+    const event = (options: { ctrlKey?: boolean; metaKey?: boolean } = {}) => ({ button: 0, clientX: 0, clientY: 0, ctrlKey: false, metaKey: false, shiftKey: false, preventDefault: vi.fn(), ...options }) as unknown as MouseEvent;
+
+    try {
+      selection.handleDataCellMousedown(0, 0, 1, event());
+      selection.finishCellSelection();
+      selection.handleDataCellMousedown(0, 1, 1, event({ ctrlKey: true }));
+      selection.handleDataCellMousedown(0, 2, 1, event({ metaKey: true }));
+
+      expect(onUserCellSelection).toHaveBeenCalledTimes(3);
+    } finally {
+      Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
+    }
+  });
+
   it("describes a rectangular selection with its display row and column indexes", () => {
     const selection = createSelection();
 

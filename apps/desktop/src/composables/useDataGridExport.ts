@@ -188,12 +188,13 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
   const visibleColumnIndexes = visibleColumnIndexesOption ?? computed(() => columns.value.map((_, index) => index));
   const hasColumnSelection = hasColumnSelectionOption ?? computed(() => false);
 
-  async function copyText(text: string, gridCopy?: { rows: readonly (readonly unknown[])[]; includeHeader?: boolean }) {
+  async function copyText(text: string, gridCopy?: { rows: readonly (readonly unknown[])[]; header?: readonly unknown[] }) {
     const copiedRows = gridCopy?.rows.map((row) => [...row]);
+    const copiedHeader = gridCopy?.header ? [...gridCopy.header] : undefined;
     clearDataGridClipboardCopy();
     try {
       await copyToClipboard(text);
-      if (copiedRows) rememberDataGridClipboardCopy(text, copiedRows, gridCopy?.includeHeader);
+      if (copiedRows) rememberDataGridClipboardCopy(text, copiedRows, copiedHeader);
       toast(t("grid.copied"));
       return true;
     } catch (e: any) {
@@ -464,7 +465,7 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     const header = columns.value.join("\t");
     const rows = displayItems.value.filter((item) => !item.isDraft).map((item) => item.data);
     const body = rows.map((row) => row.map((cell) => displayCellValue(cell)).join("\t")).join("\n");
-    await copyText(`${header}\n${body}`, { rows, includeHeader: true });
+    await copyText(`${header}\n${body}`, { rows, header: columns.value });
   }
 
   // --- Export functions ---

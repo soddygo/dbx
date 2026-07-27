@@ -123,18 +123,22 @@ export const DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS: DataGridExtractorOptions = {
   json: { pretty: true },
 };
 
+function unicodeCodePointLength(value: string): number {
+  return [...value].length;
+}
+
 export function normalizeDataGridExtractorOptions(value: unknown): DataGridExtractorOptions {
   const source = typeof value === "object" && value !== null ? (value as Partial<DataGridExtractorOptions>) : {};
   const dsv: Partial<DataGridDsvOptions> = typeof source.dsv === "object" && source.dsv !== null ? source.dsv : {};
   const sql: Partial<DataGridExtractorOptions["sql"]> = typeof source.sql === "object" && source.sql !== null ? source.sql : {};
   const json: Partial<DataGridExtractorOptions["json"]> = typeof source.json === "object" && source.json !== null ? source.json : {};
-  const separator = (candidate: unknown, fallback: string) => (typeof candidate === "string" && candidate.length > 0 && candidate.length <= 8 ? candidate : fallback);
-  const quote = typeof dsv.quote === "string" && [...dsv.quote].length === 1 ? dsv.quote : DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS.dsv.quote;
+  const separator = (candidate: unknown, fallback: string) => (typeof candidate === "string" && unicodeCodePointLength(candidate) > 0 && unicodeCodePointLength(candidate) <= 8 ? candidate : fallback);
+  const quote = typeof dsv.quote === "string" && unicodeCodePointLength(dsv.quote) === 1 ? dsv.quote : DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS.dsv.quote;
   return {
     dsv: {
       columnSeparator: separator(dsv.columnSeparator, DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS.dsv.columnSeparator),
       rowSeparator: separator(dsv.rowSeparator, DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS.dsv.rowSeparator),
-      nullText: typeof dsv.nullText === "string" && dsv.nullText.length <= 64 ? dsv.nullText : DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS.dsv.nullText,
+      nullText: typeof dsv.nullText === "string" && unicodeCodePointLength(dsv.nullText) <= 64 ? dsv.nullText : DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS.dsv.nullText,
       quote,
       quotePolicy: dsv.quotePolicy === "always" || dsv.quotePolicy === "never" ? dsv.quotePolicy : "minimal",
       includeColumnHeader: dsv.includeColumnHeader === true,
@@ -160,14 +164,14 @@ export function validateDataGridExtractorOptions(extractor: DataGridCopyExtracto
   const usesDsv = DATA_GRID_COPY_EXTRACTOR_DESCRIPTORS[extractor].category === "delimited";
   if (!usesDsv) return null;
   const quoteCodePoint = options.dsv.quote.codePointAt(0);
-  if ([...options.dsv.quote].length !== 1 || quoteCodePoint === undefined || quoteCodePoint <= 0x1f || quoteCodePoint === 0x7f) return "invalid-quote";
-  if ([...options.dsv.nullText].length > 64) return "null-text-too-long";
+  if (unicodeCodePointLength(options.dsv.quote) !== 1 || quoteCodePoint === undefined || quoteCodePoint <= 0x1f || quoteCodePoint === 0x7f) return "invalid-quote";
+  if (unicodeCodePointLength(options.dsv.nullText) > 64) return "null-text-too-long";
 
   const columnSeparator = extractor === "tsv" || extractor === "tsv-with-headers" ? "\t" : extractor === "csv" || extractor === "csv-with-headers" ? "," : extractor === "pipe-separated" ? "|" : options.dsv.columnSeparator;
   if (!columnSeparator) return "column-separator-empty";
   const usesRowSeparator = extractor !== "one-row";
   if (usesRowSeparator && !options.dsv.rowSeparator) return "row-separator-empty";
-  if ([...columnSeparator].length > 8 || [...options.dsv.rowSeparator].length > 8) return "separator-too-long";
+  if (unicodeCodePointLength(columnSeparator) > 8 || unicodeCodePointLength(options.dsv.rowSeparator) > 8) return "separator-too-long";
   if (usesRowSeparator && (columnSeparator.includes(options.dsv.rowSeparator) || options.dsv.rowSeparator.includes(columnSeparator))) return "separators-overlap";
   if (columnSeparator.includes(options.dsv.quote) || (usesRowSeparator && options.dsv.rowSeparator.includes(options.dsv.quote))) return "quote-conflicts";
   return null;

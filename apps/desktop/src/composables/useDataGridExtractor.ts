@@ -43,7 +43,7 @@ interface UseDataGridExtractorOptions {
   selectedRowIds: Ref<Set<number>> | ComputedRef<Set<number>>;
   contextCell: ComputedRef<{ rowId: number; rowIndex: number; col: number } | null> | Ref<{ rowId: number; rowIndex: number; col: number } | null>;
   contextSelectionIsSynthetic: ComputedRef<boolean> | Ref<boolean>;
-  copyText: (text: string, gridCopy?: { rows: readonly (readonly unknown[])[]; includeHeader?: boolean }) => Promise<boolean>;
+  copyText: (text: string, gridCopy?: { rows: readonly (readonly unknown[])[]; header?: readonly unknown[] }) => Promise<boolean>;
   canCopySqlInsert: (request: DataGridExtractRequest) => boolean;
   buildMongoInsert: (extractorOptions: DataGridExtractorOptions, rowLimit?: number) => Promise<string | undefined>;
   buildMongoUpdate?: (extractorOptions: DataGridExtractorOptions, rowLimit?: number) => Promise<string | undefined>;
@@ -199,15 +199,22 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
       const mongoResult = await resolveMongoExtractorResult(extractor, request);
       const result = mongoResult ?? (await api.extractDataGridSelection(request));
       if (!result.text) return false;
-      // Derive the grid paste-back payload from the actual request rows (which
-      // reflect the full row for context-cell copy, the selected cells for cell
-      // selection, etc.) rather than from selectionData(), which may still hold
-      // a synthetic 1×1 selection from a right-click.
-      // Skip gridCopy when includeRowHeader is enabled: the rendered text has a
-      // row-number column that the internal matrix does not, so paste-back
-      // would be misaligned.
-      const hasRowHeader = request.options.dsv.includeRowHeader;
-      const gridCopy = !hasRowHeader && extractor === "tsv" ? { rows: request.rows } : !hasRowHeader && extractor === "tsv-with-headers" ? { rows: request.rows, includeHeader: true } : undefined;
+      // Derive the grid paste-back payload from the effective request schema so
+      // hidden support columns, row headers, NULLs, tabs, and newlines keep the
+      // same shape and values as the rendered TSV.
+      const isTsv = extractor === "tsv" || extractor === "tsv-with-headers";
+      const gridCopy = isTsv
+        ? (() => {
+            const includeRowHeader = request.options.dsv.includeRowHeader;
+            const rows = request.rows.map((row, rowIndex) => {
+              const selectedRow = request.selectedColumnIndexes.map((index) => row[index]);
+              return includeRowHeader ? [rowIndex + 1, ...selectedRow] : selectedRow;
+            });
+            const selectedHeaders = request.selectedColumnIndexes.map((index) => request.columns[index]?.displayName ?? "");
+            const header = extractor === "tsv-with-headers" ? (includeRowHeader ? ["#", ...selectedHeaders] : selectedHeaders) : undefined;
+            return { rows, header };
+          })()
+        : undefined;
       const copied = await options.copyText(result.text, gridCopy);
       if (!copied) return false;
       showWarnings(result.warnings, result.omittedColumns);

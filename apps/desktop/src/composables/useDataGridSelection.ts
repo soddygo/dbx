@@ -26,6 +26,7 @@ export interface UseDataGridSelectionOptions {
   getScrollElement?: () => HTMLElement | null;
   cellFromClientPoint?: (clientX: number, clientY: number) => CellPosition | null;
   rowFromClientPoint?: (clientX: number, clientY: number) => number | null;
+  onUserCellSelection?: () => void;
   runtimeScope?: DataGridRuntimeScope;
 }
 
@@ -466,6 +467,7 @@ export function useDataGridSelection(options: UseDataGridSelectionOptions) {
   function handleDataCellMousedown(rowIndex: number, colIndex: number, _rowId: number, event: MouseEvent) {
     if (event.button !== 0) return;
     if (editingCell.value) return;
+    options.onUserCellSelection?.();
 
     const isMeta = event.metaKey || event.ctrlKey;
     const isShift = event.shiftKey;

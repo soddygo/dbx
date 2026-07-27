@@ -560,6 +560,12 @@ const contextSelectionIsSynthetic = ref(false);
 const contextHeaderColumn = ref<string | null>(null);
 const contextHeaderColumnIndex = ref<number | null>(null);
 const contextHeaderVisibleColIdx = ref<number | null>(null);
+
+function invalidateSyntheticContextSelection() {
+  contextSelectionIsSynthetic.value = false;
+  contextCell.value = null;
+}
+
 const bulkEditDialogOpen = ref(false);
 const bulkEditValue = ref("");
 const copyColumnNamesDialogOpen = ref(false);
@@ -3441,6 +3447,7 @@ const selection = useDataGridSelection({
   getScrollElement: dataGridSelectionScroller,
   cellFromClientPoint: dataGridCellFromClientPoint,
   rowFromClientPoint: dataGridRowFromClientPoint,
+  onUserCellSelection: invalidateSyntheticContextSelection,
   runtimeScope: dataGridRuntimeScope,
 });
 
@@ -5331,7 +5338,7 @@ function showCellDetails(rowIndex: number, colIndex: number) {
 
 function showCellDetailsForVisibleCell(rowIndex: number, visibleColIdx: number, actualColIdx: number) {
   clearRowSelection();
-  contextSelectionIsSynthetic.value = false;
+  invalidateSyntheticContextSelection();
   selectSingleCell(rowIndex, visibleColIdx);
   showCellDetails(rowIndex, actualColIdx);
 }
@@ -5419,10 +5426,10 @@ function selectTransposeCell(rowIndex: number, actualColIdx: number, event: Mous
   contextHeaderColumnIndex.value = null;
   contextHeaderVisibleColIdx.value = null;
   clearRowSelection();
+  invalidateSyntheticContextSelection();
   if (event.shiftKey || event.metaKey || event.ctrlKey) {
     extendCellSelectionTo(rowIndex, visibleColIdx);
   } else {
-    contextSelectionIsSynthetic.value = false;
     selectSingleCell(rowIndex, visibleColIdx);
   }
   transposeRowIndex.value = rowIndex;
@@ -5436,7 +5443,7 @@ function showTransposeCellDetails(rowIndex: number, actualColIdx: number) {
   contextHeaderColumnIndex.value = null;
   contextHeaderVisibleColIdx.value = null;
   clearRowSelection();
-  contextSelectionIsSynthetic.value = false;
+  invalidateSyntheticContextSelection();
   selectSingleCell(rowIndex, visibleColIdx);
   transposeRowIndex.value = rowIndex;
   showCellDetails(rowIndex, actualColIdx);
@@ -5862,7 +5869,7 @@ function moveSelectedCell(rowDelta: number, colDelta: number): boolean {
     visibleColumnCount: visibleColumnIndexes.value.length,
   });
   if (!nextPosition) return false;
-  contextSelectionIsSynthetic.value = false;
+  invalidateSyntheticContextSelection();
   selectSingleCell(nextPosition.rowIndex, nextPosition.colIndex);
   clearRowSelection();
   if (showTranspose.value) transposeRowIndex.value = nextPosition.rowIndex;
