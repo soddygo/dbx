@@ -42,6 +42,7 @@ interface UseDataGridExtractorOptions {
   hasColumnSelection: ComputedRef<boolean>;
   selectedRowIds: Ref<Set<number>> | ComputedRef<Set<number>>;
   contextCell: ComputedRef<{ rowId: number; rowIndex: number; col: number } | null> | Ref<{ rowId: number; rowIndex: number; col: number } | null>;
+  contextSelectionIsSynthetic: ComputedRef<boolean> | Ref<boolean>;
   copyText: (text: string, gridCopy?: { rows: readonly (readonly unknown[])[]; includeHeader?: boolean }) => Promise<boolean>;
   canCopySqlInsert: (request: DataGridExtractRequest) => boolean;
   buildMongoInsert: (extractorOptions: DataGridExtractorOptions, rowLimit?: number) => Promise<string | undefined>;
@@ -75,7 +76,7 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
     // A right-click sets contextCell.col to the clicked column (≥ 0); the test
     // harness and non-right-click paths leave it at -1. Only treat a 1×1 matrix
     // as synthetic when there's a real right-click context.
-    const hasRightClickContext = !!options.contextCell.value && options.contextCell.value.col >= 0;
+    const hasRightClickContext = !!options.contextCell.value && options.contextSelectionIsSynthetic.value;
 
     if (options.hasRowSelection.value && options.selectedRowIds.value.size > 0) {
       sourceRows = options.displayItems.value.filter((item) => options.selectedRowIds.value.has(item.id) && !item.isDraft).map((item) => (fullItemsById.get(item.id) ?? item).data);
@@ -202,7 +203,12 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
       // reflect the full row for context-cell copy, the selected cells for cell
       // selection, etc.) rather than from selectionData(), which may still hold
       // a synthetic 1×1 selection from a right-click.
-      const copied = await options.copyText(result.text, extractor === "tsv" ? { rows: request.rows } : extractor === "tsv-with-headers" ? { rows: request.rows, includeHeader: true } : undefined);
+      // Skip gridCopy when includeRowHeader is enabled: the rendered text has a
+      // row-number column that the internal matrix does not, so paste-back
+      // would be misaligned.
+      const hasRowHeader = request.options.dsv.includeRowHeader;
+      const gridCopy = !hasRowHeader && extractor === "tsv" ? { rows: request.rows } : !hasRowHeader && extractor === "tsv-with-headers" ? { rows: request.rows, includeHeader: true } : undefined;
+      const copied = await options.copyText(result.text, gridCopy);
       if (!copied) return false;
       showWarnings(result.warnings, result.omittedColumns);
       return true;

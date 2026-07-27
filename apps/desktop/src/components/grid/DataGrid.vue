@@ -553,6 +553,10 @@ function typeColorClass(t: string): string {
   return "text-muted-foreground";
 }
 const contextCell = ref<{ rowId: number; rowIndex: number; col: number } | null>(null);
+// True when onCellContext created a synthetic single-cell selection (the cell
+// was not previously selected). Lets buildRequest distinguish a genuine 1×1
+// selection (user Ctrl+click) from a synthetic one (right-click on unselected).
+const contextSelectionIsSynthetic = ref(false);
 const contextHeaderColumn = ref<string | null>(null);
 const contextHeaderColumnIndex = ref<number | null>(null);
 const contextHeaderVisibleColIdx = ref<number | null>(null);
@@ -5155,6 +5159,7 @@ const {
   selectedCellMatrix,
   selectedRange,
   contextCell: exportContextCell,
+  contextSelectionIsSynthetic,
   getRowItem: (rowId: number) => visibleDisplayItems.value.find((item) => item.id === rowId),
   selectedRowIds,
   hasRowSelection,
@@ -6663,11 +6668,15 @@ function onCellContext(rowId: number, rowIndex: number, colIdx: number, visibleC
   contextHeaderVisibleColIdx.value = null;
   contextCell.value = { rowId, rowIndex, col: colIdx };
   if (hasRowSelection.value && isRowSelected(rowId)) {
+    contextSelectionIsSynthetic.value = false;
     return;
   }
   clearRowSelection();
   if (!cellIsSelected(rowIndex, visibleColIdx)) {
     selectSingleCell(rowIndex, visibleColIdx);
+    contextSelectionIsSynthetic.value = true;
+  } else {
+    contextSelectionIsSynthetic.value = false;
   }
 }
 

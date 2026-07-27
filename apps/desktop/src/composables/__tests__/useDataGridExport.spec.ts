@@ -82,6 +82,7 @@ function createMongoExportState(options: {
     selectedCellMatrix: computed(() => options.selectedCellMatrix ?? null),
     selectedRange: computed(() => null),
     contextCell: ref({ rowId: options.item.id, rowIndex: 0, col: -1 }),
+    contextSelectionIsSynthetic: ref(false),
     getRowItem: (rowId) => items.find((item) => item.id === rowId),
     selectedRowIds: ref(selectedRowIds),
     hasRowSelection: computed(() => selectedRowIds.size > 0),
@@ -100,7 +101,7 @@ function createExportState(
   extractorOptions = DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS,
   hasColumnSelection = false,
   visibleColumnIndexes?: number[],
-  contextCellCol = -1,
+  isSyntheticContext = false,
 ) {
   const rows = (rowDataList ?? [rowData ?? columns.map((column, index) => (column === "id" ? 1 : `value-${index}`))]).map((data, index) => ({ ...row(data), id: index + 1 }));
   const item = rows[0]!;
@@ -126,7 +127,8 @@ function createExportState(
     selectedCells: computed(() => selectedCellMatrix ?? selectedCellsOverride ?? { columns: [], rows: [] }),
     selectedCellMatrix: computed(() => selectedCellMatrix ?? null),
     selectedRange: computed(() => null),
-    contextCell: ref({ rowId: item.id, rowIndex: 0, col: contextCellCol }),
+    contextCell: ref({ rowId: item.id, rowIndex: 0, col: isSyntheticContext ? 0 : -1 }),
+    contextSelectionIsSynthetic: ref(isSyntheticContext),
     getRowItem: (rowId) => rows.find((candidate) => candidate.id === rowId),
     selectedRowIds,
     hasRowSelection: computed(() => selectedRowIds.value.size > 0),
@@ -187,6 +189,7 @@ describe("useDataGridExport prepared row statements", () => {
       selectedCellMatrix: computed(() => matrix),
       selectedRange: computed(() => ({ startRow: 0, endRow: 0, startCol: 1, endCol: 1 })),
       contextCell: ref({ rowId: item.id, rowIndex: 0, col: 1 }),
+      contextSelectionIsSynthetic: ref(false),
       getRowItem: (rowId) => (rowId === item.id ? item : undefined),
       selectedRowIds: ref(new Set<number>()),
       hasRowSelection: computed(() => false),
@@ -206,9 +209,9 @@ describe("useDataGridExport prepared row statements", () => {
     expect(extractDataGridSelection).toHaveBeenCalledWith(
       expect.objectContaining({
         extractor: "sql-updates",
-        selectedColumnIndexes: [0, 1],
-        rows: [["Ada", true, 7]],
-        selectionKind: "rows",
+        selectedColumnIndexes: [0],
+        rows: [[true, 7]],
+        selectionKind: "cells",
       }),
     );
     expect(copyToClipboard).toHaveBeenCalledWith("UPDATE users SET active = TRUE WHERE id = 7;");
@@ -261,13 +264,33 @@ describe("useDataGridExport prepared row statements", () => {
       columns: ["id"],
       rows: [[1]],
     };
-    const state = createExportState(editableTable, ["id", "name", "note"], matrix, undefined, undefined, undefined, [], DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS, false, [0, 1, 2], 0);
+    const state = createExportState(editableTable, ["id", "name", "note"], matrix, undefined, undefined, undefined, [], DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS, false, [0, 1, 2], true);
     await state.copyWithExtractor("csv");
 
     // Despite the 1×1 matrix, the context-cell fallback should produce a full-row request (3 columns).
     expect(extractDataGridSelection).toHaveBeenCalledWith(
       expect.objectContaining({
         columns: [expect.objectContaining({ displayName: "id" }), expect.objectContaining({ displayName: "name" }), expect.objectContaining({ displayName: "note" })],
+      }),
+    );
+  });
+
+  it("copies only the selected cell for a genuine 1×1 selection (not synthetic)", async () => {
+    vi.mocked(extractDataGridSelection).mockResolvedValue({ text: "x", mimeType: "text/csv", fileExtension: "csv", rowCount: 1, columnCount: 1 });
+    // A genuine 1×1 selection (user Ctrl+click) — column 1 of row 0.
+    const matrix: CellSelectionMatrix = {
+      rowIndexes: [0],
+      columnIndexes: [1],
+      columns: ["name"],
+      rows: [["Ada"]],
+    };
+    // isSyntheticContext = false → should NOT use the context-cell full-row fallback.
+    const state = createExportState(editableTable, ["id", "name", "note"], matrix, undefined, undefined, undefined, [], DEFAULT_DATA_GRID_EXTRACTOR_OPTIONS, false, [0, 1, 2], false);
+    await state.copyWithExtractor("csv");
+
+    expect(extractDataGridSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        columns: [expect.objectContaining({ displayName: "name" })],
       }),
     );
   });

@@ -87,6 +87,7 @@ export interface UseDataGridExportOptions {
   selectedCellMatrix: ComputedRef<CellSelectionMatrix | null>;
   selectedRange: ComputedRef<CellSelectionRange | null>;
   contextCell: Ref<{ rowId: number; rowIndex: number; col: number } | null> | ComputedRef<{ rowId: number; rowIndex: number; col: number } | null>;
+  contextSelectionIsSynthetic: Ref<boolean> | ComputedRef<boolean>;
   getRowItem: (rowId: number) => RowItem | undefined;
   selectedRowIds: Ref<Set<number>> | ComputedRef<Set<number>>;
   hasRowSelection: ComputedRef<boolean>;
@@ -165,6 +166,7 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     selectedCellMatrix: selectedCellMatrixOption,
     selectedRange,
     contextCell,
+    contextSelectionIsSynthetic,
     getRowItem,
     selectedRowIds,
     hasRowSelection,
@@ -455,6 +457,7 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
     buildMongoInsert: buildMongoExtractorInsert,
     buildMongoUpdate: buildMongoExtractorUpdate,
     contextCell,
+    contextSelectionIsSynthetic,
   });
 
   async function copyAll() {

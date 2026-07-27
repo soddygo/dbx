@@ -156,7 +156,10 @@ fn build_context(request: &DataGridExtractRequest) -> Result<ExtractContext<'_>,
 }
 
 fn validate_request_budget(request: &DataGridExtractRequest) -> Result<(), DataGridExtractError> {
-    if request.rows.len() > DATA_GRID_EXTRACTOR_MAX_ROWS || request.columns.len() > DATA_GRID_EXTRACTOR_MAX_COLUMNS {
+    if request.rows.len() > DATA_GRID_EXTRACTOR_MAX_ROWS
+        || request.columns.len() > DATA_GRID_EXTRACTOR_MAX_COLUMNS
+        || request.selected_column_indexes.len() > DATA_GRID_EXTRACTOR_MAX_COLUMNS
+    {
         return Err(input_too_large_error());
     }
 

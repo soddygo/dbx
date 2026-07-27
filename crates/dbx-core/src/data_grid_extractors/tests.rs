@@ -674,6 +674,18 @@ fn rejects_requests_that_exceed_the_column_budget() {
 }
 
 #[test]
+fn rejects_requests_that_exceed_the_selected_index_budget() {
+    // columns list is small, but selected_column_indexes is oversized —
+    // the budget must catch it before Vec::with_capacity allocates.
+    let mut request = request(DataGridExtractorId::Csv);
+    request.selected_column_indexes = (0..=DATA_GRID_EXTRACTOR_MAX_COLUMNS).collect();
+
+    let error = extract_data_grid_selection(request).expect_err("oversized index list must fail");
+
+    assert_eq!(error.code, DataGridExtractErrorCode::InputTooLarge);
+}
+
+#[test]
 fn bounded_output_stops_before_allocating_past_the_limit() {
     let mut output = BoundedOutput::new(4);
     assert_eq!(output.write(b"1234").expect("bounded write"), 4);
