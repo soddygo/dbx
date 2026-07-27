@@ -198,8 +198,11 @@ export function useDataGridExtractor(options: UseDataGridExtractorOptions) {
       const mongoResult = await resolveMongoExtractorResult(extractor, request);
       const result = mongoResult ?? (await api.extractDataGridSelection(request));
       if (!result.text) return false;
-      const selection = selectionData();
-      const copied = await options.copyText(result.text, extractor === "tsv" && selection ? { rows: selection.rows } : extractor === "tsv-with-headers" && selection ? { rows: selection.rows, includeHeader: true } : undefined);
+      // Derive the grid paste-back payload from the actual request rows (which
+      // reflect the full row for context-cell copy, the selected cells for cell
+      // selection, etc.) rather than from selectionData(), which may still hold
+      // a synthetic 1×1 selection from a right-click.
+      const copied = await options.copyText(result.text, extractor === "tsv" ? { rows: request.rows } : extractor === "tsv-with-headers" ? { rows: request.rows, includeHeader: true } : undefined);
       if (!copied) return false;
       showWarnings(result.warnings, result.omittedColumns);
       return true;
