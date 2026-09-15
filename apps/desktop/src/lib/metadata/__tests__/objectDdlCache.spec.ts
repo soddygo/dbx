@@ -268,6 +268,33 @@ describe("objectDdlCache", () => {
   describe("strict connection-level invalidation", () => {
     const connectionMatch = { connectionId: "c1" };
 
+    it.each(["object-ddl:v1:c1:", "object-meta:v1:c1:"])("waits for the other namespace when %s fails", async (failedPrefix) => {
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      mocks.deleteSchemaCachePrefix.mockImplementation((prefix: string) => (prefix === failedPrefix ? Promise.reject(new Error("locked")) : pending));
+      let settled = false;
+      const outcome = invalidateObjectDdlCache(connectionMatch, { strict: true }).then(
+        () => {
+          settled = true;
+          return undefined;
+        },
+        (error: unknown) => {
+          settled = true;
+          return error;
+        },
+      );
+      await vi.waitFor(() => expect(mocks.deleteSchemaCachePrefix).toHaveBeenCalledTimes(2));
+      // Drain the rejection handlers, without releasing the other deletion.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      release();
+      const failure = await outcome;
+      expect(isObjectCacheInvalidationError(failure)).toBe(true);
+      expect(failure).toMatchObject({ scope: failedPrefix, message: "locked" });
+    });
+
     function objectPrefixes(): string[] {
       return mocks.deleteSchemaCachePrefix.mock.calls.map(([prefix]) => prefix as string);
     }
